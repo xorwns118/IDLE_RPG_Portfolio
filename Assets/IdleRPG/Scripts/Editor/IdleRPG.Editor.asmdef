@@ -1,0 +1,19 @@
+{
+  "name": "IdleRPG.Editor",
+  "rootNamespace": "IdleRPG.Editor",
+  "references": [
+    "IdleRPG.Domain",
+    "IdleRPG.Runtime"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

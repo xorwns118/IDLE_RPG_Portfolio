@@ -1,0 +1,161 @@
+# MVP Implementation Brief
+
+작성일: 2026-08-20
+
+## 요약
+
+현재 프로젝트는 Week 1 Vertical Slice 기준으로 Unity 에디터에서 바로 Play 테스트 가능한 MVP 상태까지 구성되어 있다.
+
+구현된 핵심 흐름은 다음과 같다.
+
+- `SampleScene`과 `Week1VerticalSlice`에 MVP 전용 컨트롤러, Actor, HUD, EventSystem 배치
+- 에디터에는 `Player Start Point` 위치 마커만 배치하고, 실제 Hero Actor는 Play 시작 시 런타임 생성
+- Monster Actor는 기본 배치에서 제외하고 `MonsterSpawner`를 통해 런타임 스폰
+- 자동 타겟 탐색, 접근, 기본 공격, HP 감소, 사망 이벤트, 보상, 스테이지 진행 구현
+- Hero 사망 시 현재 Stage 재시작 UI 표시 및 재시작 시 위치/HP/상태 회복
+- 디자이너가 Inspector에서 플레이어/몬스터/스테이지/배치/색상/문구/타이밍을 조절할 수 있도록 설정 그룹 추가
+- 화면 상단 HUD에 Stage, Gold, EXP, Player/Enemy HP, 전투 로그 표시
+- 씬이 열리거나 Play 진입 직전에 레이아웃과 슬롯을 자동 보정하는 에디터 유틸리티 추가
+- Unity batchmode 스모크 테스트로 씬 슬롯과 런타임 초기화 경로 검증
+
+## 플레이 방법
+
+1. Unity에서 `Assets/Scenes/SampleScene.unity`를 연다.
+2. 외부 변경 감지 팝업이 뜨면 `Reload`를 선택한다.
+3. Play 버튼을 누른다.
+4. 화면에 `Training Hero`와 첫 번째 몬스터가 배치되고 자동 전투가 시작된다.
+
+추가 확인이 필요하면 Unity 메뉴에서 `Idle RPG > Run MVP Scene Smoke Test`를 실행한다.
+
+## 씬 구성
+
+두 씬 모두 동일한 MVP 레이아웃을 저장해 두었다.
+
+- `Assets/Scenes/SampleScene.unity`
+- `Assets/Scenes/Week1VerticalSlice.unity`
+
+씬에 저장된 주요 오브젝트는 다음과 같다.
+
+- `MVP Scene Controller`: 전체 MVP 씬 구성과 런타임 시작점
+- `World`: 전투 월드 루트
+- `Combat Ground`: 전투 바닥 시각 요소
+- `Player Start Point`: Hero 시작 위치를 나타내는 빈 Transform 기준점. 렌더링/전투 컴포넌트는 없음
+- `Monster Spawn Point`: 몬스터 런타임 생성 위치
+- `MVP HUD Canvas`: Screen Space Overlay HUD
+- `Status Panel`: Stage, 자원, HP, 로그 표시 패널
+- `Restart Panel`: Hero 사망 시 현재 Stage를 처음부터 다시 시작하는 UI
+- `EventSystem`: UI 입력 이벤트 시스템
+
+`MvpSceneController`에는 디자이너가 조절하는 설정과 자동 할당되는 씬 참조가 나뉘어 있다.
+
+- `Game Content`: Player, Monster, Stage 데이터
+- `Designer Settings`: Camera, World Layout, Actor View, Monster Spawn, HUD, Restart Popup, Stage Runtime
+- `PlayerStartPoint`
+- `MonsterSpawnPoint`
+- `HudCanvas`
+- `StageText`
+- `ResourceText`
+- `PlayerText`
+- `EnemyText`
+- `LogText`
+- `PlayerHpFill`
+- `EnemyHpFill`
+- `RestartPanel`
+- `RestartButton`
+
+## 코드 구조
+
+### Domain
+
+경로: `Assets/IdleRPG/Scripts/Domain`
+
+Unity 의존성이 없는 순수 게임 규칙 계층이다.
+
+- `ActorModel`: Actor의 상태, HP, 사망 이벤트 관리
+- `StatBlock`: HP, 공격력, 방어력, 사거리, 이동속도, 공격간격, 치명타 관련 수치
+- `GlobalEnums`: 여러 객체가 공유하는 전역 enum 관리
+- `ActorTeam`: Player/Monster 팀 구분
+- `ActorState`: Search, Move, Attack, Dead 등 전투 상태
+- `CombatMath`: 기본 공격 피해량 계산
+- `DamageResult`: 피해량, 치명타 여부 등 계산 결과
+- `PlayerDefinition`, `MonsterDefinition`, `StageDefinition`: 런타임 콘텐츠 정의
+- `RuntimeContentDatabase`: 정의 데이터 조회
+
+### Runtime
+
+경로: `Assets/IdleRPG/Scripts/Runtime`
+
+Unity 씬에서 실제로 동작하는 계층이다.
+
+- `MvpSceneController`: 씬 오브젝트, HUD, Actor 배치 및 Play 시 런타임 초기화
+- `MvpGameContentSettings`: Inspector에서 조절 가능한 Player, Monster, Stage 콘텐츠 설정
+- `MvpSceneDesignerSettings`: Inspector에서 조절 가능한 카메라, 월드 배치, Actor 표시, HUD, 재시작 팝업, 스테이지 런타임 설정
+- `GeneratedSpriteFactory`: 임시 흰색 스프라이트 생성
+- `DemoContentFactory`: 기본 Week 1 설정을 `RuntimeContentDatabase`로 변환하는 호환용 팩토리
+- `ActorFactory`: GameObject에 전투 Actor 컴포넌트 묶음, 월드 HP 바, Display Name 라벨 구성
+- `CombatActor`: ActorModel과 SpriteRenderer를 연결하고 피격/사망 이벤트 발행
+- `AutoCombatController`: 가장 가까운 적 탐색, 이동, 기본 공격 수행
+- `BattleContext`: 살아 있는 Actor 등록 및 적 탐색
+- `StageController`: `RuntimeSetup` 단일 입력으로 스테이지 런타임을 초기화하고, 플레이어 생성/회복, 몬스터 생성, 처치 보상, 다음 스테이지 진행, 현재 Stage 재시작 처리
+- `MonsterSpawner`: 몬스터 생성 위치 기반 스폰
+- `HealthBarView`: 월드 공간 HP 바 갱신
+- `CombatHud`: IMGUI 기반 보조 HUD
+
+### Editor
+
+경로: `Assets/IdleRPG/Scripts/Editor`
+
+MVP 씬 구성과 검증을 위한 에디터 전용 코드다.
+
+- `MvpSceneAutoLayout`: 씬 오픈, 활성 씬 변경, Play 진입 직전에 MVP 레이아웃 자동 재빌드 및 저장
+- `MvpSceneSmokeTest`: 씬 슬롯, 필수 오브젝트, 필수 컴포넌트, 런타임 초기화 검증
+- `Week1SceneBuilder`: `Week1VerticalSlice` 생성 메뉴 제공
+
+## 런타임 흐름
+
+1. `MvpSceneController.OnEnable()`에서 씬 레이아웃을 보정한다.
+2. Play 모드 진입 시 `MvpSceneController.Awake()`가 다시 레이아웃을 확인한다.
+3. `BattleContext`와 `StageController`가 컨트롤러 오브젝트에 추가된다.
+4. `MvpSceneController`의 `Game Content` 설정이 `RuntimeContentDatabase`를 만든다.
+5. `StageController.Initialize(RuntimeSetup)`이 `Player Start Point` 위치에 새 Hero를 풀 HP로 생성한 뒤 첫 몬스터를 스폰한다.
+6. `AutoCombatController.Update()`가 매 프레임 적 탐색, 이동, 공격을 수행한다.
+7. 몬스터 사망 시 `StageController`가 보상을 지급하고 처치 수를 증가시킨다.
+8. 처치 수가 요구치에 도달하면 다음 스테이지로 이동한다.
+9. `MvpSceneController.Update()`가 HUD 텍스트와 HP Fill을 갱신한다.
+
+## 검증 결과
+
+확인 완료 항목:
+
+- Unity Roslyn 기반 스크립트 컴파일 체크 통과
+- `MvpSceneController`에 `Game Content`와 `Designer Settings` 직렬화 설정 그룹 추가 확인
+- `SampleScene`과 `Week1VerticalSlice`의 핵심 SerializeField 슬롯이 모두 non-zero fileID로 저장됨
+- 씬 내 `Player Start Point`, `Monster Spawn Point`, `MVP HUD Canvas`, `Status Panel`, `Restart Panel`, `EventSystem` 존재 확인
+- 기본 배치에 `Monster Actor`가 남지 않고 런타임 스폰 경로를 사용하는지 확인
+- Actor 오브젝트의 `CombatActor`, `AutoCombatController`, `HealthBarView`, `Name Label` 존재 확인
+- HUD의 Text/Image 구성 요소 존재 확인
+- 스모크 테스트에 `StageController.Initialize(RuntimeSetup)` 실행, Player 슬롯 없이 Hero/Monster 런타임 모델 생성, Hero 사망 후 Stage 재시작 검증 추가
+- 2026-08-24 변경 후 Unity Roslyn 기반 스크립트 컴파일 체크 통과
+- 2026-08-24 batchmode 스모크 테스트는 원본 프로젝트가 이미 Unity 에디터에서 열려 있어 실행 차단됨
+
+주의:
+
+- 원본 프로젝트가 이미 Unity 에디터에서 열려 있으면 같은 프로젝트를 batchmode로 동시에 열 수 없다.
+- 이 때문에 최종 batch 검증은 원본 상태를 임시 복사한 프로젝트에서 수행했다.
+- 원본 씬 파일에는 검증된 복사본의 Unity 저장 결과를 적용했다.
+
+## 현재 한계
+
+- 그래픽은 임시 생성 스프라이트 기반이다.
+- 콘텐츠 데이터는 Inspector에서 조절 가능하지만 아직 별도 ScriptableObject/CSV 파이프라인은 아니다.
+- 스킬, 장비, 인벤토리, 저장/로드, 성장 시스템은 아직 없다.
+- 전투 AI는 가장 가까운 적을 찾아 기본 공격만 수행한다.
+- Stage 밸런스는 테스트용 수치다.
+
+## 다음 작업 제안
+
+1. CSV 또는 ScriptableObject 기반 콘텐츠 파이프라인으로 Inspector 설정을 자산화
+2. 기본 공격을 SkillDefinition/SkillRuntime 구조로 분리
+3. Actor 상태 전환을 명시적 StateMachine으로 정리
+4. 실제 2D 캐릭터/몬스터 스프라이트와 애니메이션 연결
+5. 드랍 보상, 성장 수치, 장비 슬롯, 저장 데이터 구조 추가
