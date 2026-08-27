@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using IdleRPG.Domain;
 using IdleRPG.Domain.Actors;
 using IdleRPG.Runtime.Actors;
+using IdleRPG.Runtime.Maps;
 using UnityEngine;
 
 namespace IdleRPG.Runtime.Combat
@@ -13,6 +14,12 @@ namespace IdleRPG.Runtime.Combat
 
         public IReadOnlyList<CombatActor> Actors => RegisteredActors;
         public CombatActor Player { get; private set; }
+        public TileMapLayout TileMap { get; private set; }
+
+        public void SetTileMap(TileMapLayout _TileMap)
+        {
+            TileMap = _TileMap;
+        }
 
         public void Register(CombatActor _Actor)
         {
@@ -63,7 +70,7 @@ namespace IdleRPG.Runtime.Combat
                     continue;
                 }
 
-                float distance = Vector2.Distance(_Requester.transform.position, actor.transform.position);
+                float distance = GetDistanceScore(_Requester, actor);
                 if (distance < nearestDistance)
                 {
                     nearest = actor;
@@ -72,6 +79,11 @@ namespace IdleRPG.Runtime.Combat
             }
 
             return nearest;
+        }
+
+        private float GetDistanceScore(CombatActor _Requester, CombatActor _Target)
+        {
+            return Vector2.Distance(_Requester.transform.position, _Target.transform.position);
         }
 
         private void HandleActorDied(CombatActor _Actor)

@@ -4,6 +4,7 @@ using IdleRPG.Domain.Data;
 using IdleRPG.Runtime.Actors;
 using IdleRPG.Runtime.Combat;
 using IdleRPG.Runtime.Configuration;
+using IdleRPG.Runtime.Maps;
 using UnityEngine;
 
 namespace IdleRPG.Runtime.Stages
@@ -14,6 +15,7 @@ namespace IdleRPG.Runtime.Stages
         private BattleContext Context;
         private Transform SpawnPoint;
         private MvpMonsterSpawnSettings Settings = new MvpMonsterSpawnSettings();
+        private TileMapLayout TileMap;
         private int SpawnCount;
 
         public void Initialize(BattleContext _Context, ActorFactory _Factory)
@@ -26,11 +28,17 @@ namespace IdleRPG.Runtime.Stages
             Context = _Context;
             Factory = _Factory;
             Settings = _Settings ?? new MvpMonsterSpawnSettings();
+            Settings.EnsureDefaults();
         }
 
         public void SetSpawnPoint(Transform _SpawnPoint)
         {
             SpawnPoint = _SpawnPoint;
+        }
+
+        public void SetTileMap(TileMapLayout _TileMap)
+        {
+            TileMap = _TileMap;
         }
 
         public void ResetSpawnSequence()
@@ -46,11 +54,24 @@ namespace IdleRPG.Runtime.Stages
                 ActorTeam.Monster,
                 _Definition.Stats);
 
-            Vector3 basePosition = SpawnPoint != null ? SpawnPoint.position : Settings.FallbackPosition;
-            Vector3 position = basePosition + Settings.RepeatedSpawnOffset * SpawnCount;
+            Vector3 position = ResolveSpawnPosition();
             SpawnCount++;
 
             return Factory.CreateActor(model, position, _Color, Context);
+        }
+
+        private Vector3 ResolveSpawnPosition()
+        {
+            Vector3 basePosition = SpawnPoint != null ? SpawnPoint.position : Settings.FallbackPosition;
+            if (TileMap != null && TileMap.IsEnabled && Settings.UseTileSpawnOffset)
+            {
+                Vector2Int baseCell = TileMap.WorldToCell(basePosition);
+                Vector2Int spawnCell = TileMap.ClampCell(baseCell + Settings.RepeatedSpawnCellOffset * SpawnCount);
+                spawnCell = TileMap.GetNearestWalkableCell(spawnCell);
+                return TileMap.CellToActorWorld(spawnCell);
+            }
+
+            return basePosition + Settings.RepeatedSpawnOffset * SpawnCount;
         }
     }
 }

@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using IdleRPG.Domain;
 using UnityEngine;
 
 namespace IdleRPG.Runtime.Configuration
@@ -34,15 +36,30 @@ namespace IdleRPG.Runtime.Configuration
 
         public void EnsureDefaults()
         {
-            if (Camera == null) Camera = new MvpCameraSettings();
-            if (World == null) World = new MvpWorldLayoutSettings();
-            if (Actors == null) Actors = new MvpActorViewSettings();
-            if (Spawn == null) Spawn = new MvpMonsterSpawnSettings();
-            if (Hud == null) Hud = new MvpHudSettings();
-            if (RestartPanel == null) RestartPanel = new MvpRestartPanelSettings();
-            if (Stage == null) Stage = new MvpStageRuntimeSettings();
+            if (Camera == null)
+                Camera = new MvpCameraSettings();
 
+            if (World == null)
+                World = new MvpWorldLayoutSettings();
+
+            if (Actors == null)
+                Actors = new MvpActorViewSettings();
+
+            if (Spawn == null)
+                Spawn = new MvpMonsterSpawnSettings();
+
+            if (Hud == null)
+                Hud = new MvpHudSettings();
+
+            if (RestartPanel == null)
+                RestartPanel = new MvpRestartPanelSettings();
+
+            if (Stage == null)
+                Stage = new MvpStageRuntimeSettings();
+
+            World.EnsureDefaults();
             Actors.EnsureDefaults();
+            Spawn.EnsureDefaults();
             Hud.EnsureDefaults();
             RestartPanel.EnsureDefaults();
         }
@@ -52,10 +69,10 @@ namespace IdleRPG.Runtime.Configuration
     public sealed class MvpCameraSettings
     {
         [Tooltip("Main camera position used by the MVP scene builder.")]
-        public Vector3 Position = new Vector3(0f, 0.9f, -10f);
+        public Vector3 Position = new Vector3(0f, 0.05f, -10f);
 
         [Min(0.1f)]
-        public float OrthographicSize = 4.1f;
+        public float OrthographicSize = 4.35f;
 
         public Color BackgroundColor = new Color(0.08f, 0.1f, 0.13f);
     }
@@ -63,6 +80,10 @@ namespace IdleRPG.Runtime.Configuration
     [Serializable]
     public sealed class MvpWorldLayoutSettings
     {
+        [Header("Tile Map")]
+        public MvpTileMapSettings TileMap = new MvpTileMapSettings();
+
+        [Header("Legacy Ground Fallback")]
         public Vector3 GroundPosition = new Vector3(0f, -0.75f, 0f);
         public Vector3 GroundScale = new Vector3(8.5f, 0.08f, 1f);
         public Color GroundColor = new Color(0.34f, 0.38f, 0.42f);
@@ -73,6 +94,410 @@ namespace IdleRPG.Runtime.Configuration
 
         [Tooltip("Base position used by Monster Spawn Point.")]
         public Vector3 MonsterSpawnPosition = new Vector3(3.3f, 0f, 0f);
+
+        public void EnsureDefaults()
+        {
+            if (TileMap == null)
+                TileMap = new MvpTileMapSettings();
+
+            TileMap.EnsureDefaults();
+        }
+    }
+
+    [Serializable]
+    public sealed class MvpTileMapSettings
+    {
+        [Tooltip("Builds the MVP arena from square tiles instead of a horizontal ground bar.")]
+        public bool Enabled = true;
+
+        [Min(1)] public int Columns = 8;
+        [Min(1)] public int Rows = 5;
+        public Vector2 CellSize = new Vector2(0.8f, 0.8f);
+        public Vector3 Origin = new Vector3(-2.8f, -1.6f, 0f);
+        public Vector2Int PlayerStartCell = new Vector2Int(1, 2);
+        public Vector2Int MonsterSpawnCell = new Vector2Int(6, 2);
+        public Vector3 ActorAnchorOffset = new Vector3(0f, 0.22f, 0f);
+
+        [Header("Tile Colors")]
+        public Color PrimaryTileColor = new Color(0.16f, 0.25f, 0.25f, 1f);
+        public Color AlternateTileColor = new Color(0.12f, 0.2f, 0.23f, 1f);
+        public Color PlayerStartTileColor = new Color(0.18f, 0.42f, 0.55f, 1f);
+        public Color MonsterSpawnTileColor = new Color(0.32f, 0.34f, 0.2f, 1f);
+        public Color BlockedTileColor = new Color(0.08f, 0.08f, 0.09f, 1f);
+
+        [Header("Tile Sprite Palette")]
+        [Tooltip("Visual type used by cells without an override.")]
+        public TileVisualKind DefaultVisualKind = TileVisualKind.Ground;
+
+        [Tooltip("Assign sliced PNG sprites here. Each cell can then paint one visual type from this palette.")]
+        public MvpTileSpriteSettings[] SpritePalette = MvpTileSpriteSettings.CreateDefaultPalette();
+
+        [Header("Cell Overrides")]
+        public MvpTileCellSettings[] CellOverrides = Array.Empty<MvpTileCellSettings>();
+
+        [Header("Sorting")]
+        public int TileSortingOrderBase = -20;
+        [Min(1)] public int TileSortingOrderStep = 1;
+        public int ActorSortingOrderBase = 30;
+        [Min(1)] public int ActorSortingOrderStep = 1;
+        [Min(0)] public int OverlaySortingOffset = 20;
+
+        public void EnsureDefaults()
+        {
+            Columns = Mathf.Max(1, Columns);
+            Rows = Mathf.Max(1, Rows);
+            float squareCellSize = Mathf.Max(0.1f, Mathf.Max(CellSize.x, CellSize.y));
+            CellSize = new Vector2(squareCellSize, squareCellSize);
+            PlayerStartCell = ClampCell(PlayerStartCell);
+            MonsterSpawnCell = ClampCell(MonsterSpawnCell);
+            TileSortingOrderStep = Mathf.Max(1, TileSortingOrderStep);
+            ActorSortingOrderStep = Mathf.Max(1, ActorSortingOrderStep);
+            OverlaySortingOffset = Mathf.Max(0, OverlaySortingOffset);
+            NormalizeSpritePalette();
+            NormalizeCellOverrides();
+        }
+
+        public Vector3 CellToLocal(Vector2Int _Cell)
+        {
+            Vector2Int cell = ClampCell(_Cell);
+
+            float x = Origin.x + cell.x * CellSize.x;
+            float y = Origin.y + cell.y * CellSize.y;
+
+            return new Vector3(x, y, Origin.z);
+        }
+
+        public Vector2Int LocalToCell(Vector3 _LocalPosition)
+        {
+            int cellX = Mathf.RoundToInt((_LocalPosition.x - Origin.x) / CellSize.x);
+            int cellY = Mathf.RoundToInt((_LocalPosition.y - Origin.y) / CellSize.y);
+
+            return ClampCell(new Vector2Int(cellX, cellY));
+        }
+
+        public Vector2Int ClampCell(Vector2Int _Cell)
+        {
+            return new Vector2Int(
+                Mathf.Clamp(_Cell.x, 0, Mathf.Max(0, Columns - 1)),
+                Mathf.Clamp(_Cell.y, 0, Mathf.Max(0, Rows - 1)));
+        }
+
+        public int GetCellDistance(Vector2Int _From, Vector2Int _To)
+        {
+            Vector2Int from = ClampCell(_From);
+            Vector2Int to = ClampCell(_To);
+            return Mathf.Abs(from.x - to.x) + Mathf.Abs(from.y - to.y);
+        }
+
+        public int GetCellDepth(Vector2Int _Cell)
+        {
+            Vector2Int cell = ClampCell(_Cell);
+            return cell.y;
+        }
+
+        public Color GetTileColor(Vector2Int _Cell)
+        {
+            Vector2Int cell = ClampCell(_Cell);
+            MvpTileSpriteSettings spriteSettings = GetSpriteSettings(GetTileVisualKind(cell));
+            if (spriteSettings != null && spriteSettings.Sprite != null)
+            {
+                return spriteSettings.Tint;
+            }
+
+            if (cell == PlayerStartCell)
+            {
+                return PlayerStartTileColor;
+            }
+
+            if (cell == MonsterSpawnCell)
+            {
+                return MonsterSpawnTileColor;
+            }
+
+            if (GetTileKind(cell) == TileKind.Blocked)
+            {
+                return BlockedTileColor;
+            }
+
+            return (cell.x + cell.y) % 2 == 0 ? PrimaryTileColor : AlternateTileColor;
+        }
+
+        public TileVisualKind GetTileVisualKind(Vector2Int _Cell)
+        {
+            Vector2Int cell = ClampCell(_Cell);
+            MvpTileCellSettings overrideCell = FindCellOverride(cell);
+            return overrideCell != null ? overrideCell.VisualKind : DefaultVisualKind;
+        }
+
+        public Sprite GetTileSprite(Vector2Int _Cell)
+        {
+            MvpTileSpriteSettings spriteSettings = GetSpriteSettings(GetTileVisualKind(_Cell));
+            return spriteSettings != null ? spriteSettings.Sprite : null;
+        }
+
+        public TileKind GetDefaultTileKind(TileVisualKind _VisualKind)
+        {
+            MvpTileSpriteSettings spriteSettings = GetSpriteSettings(_VisualKind);
+            return spriteSettings != null ? spriteSettings.DefaultKind : TileKind.Walkable;
+        }
+
+        public MvpTileSpriteSettings GetSpriteSettings(TileVisualKind _VisualKind)
+        {
+            if (SpritePalette == null)
+            {
+                return null;
+            }
+
+            MvpTileSpriteSettings fallback = null;
+            foreach (MvpTileSpriteSettings spriteSettings in SpritePalette)
+            {
+                if (spriteSettings == null || spriteSettings.VisualKind != _VisualKind)
+                    continue;
+
+                if (fallback == null)
+                    fallback = spriteSettings;
+
+                if (spriteSettings.Sprite != null)
+                    return spriteSettings;
+            }
+
+            return fallback;
+        }
+
+        public TileKind GetTileKind(Vector2Int _Cell)
+        {
+            Vector2Int cell = ClampCell(_Cell);
+            MvpTileCellSettings overrideCell = FindCellOverride(cell);
+            return overrideCell != null ? overrideCell.Kind : TileKind.Walkable;
+        }
+
+        public bool IsWalkable(Vector2Int _Cell)
+        {
+            Vector2Int cell = ClampCell(_Cell);
+            return cell == PlayerStartCell || cell == MonsterSpawnCell || GetTileKind(cell) != TileKind.Blocked;
+        }
+
+        public void SetTileKind(Vector2Int _Cell, TileKind _Kind)
+        {
+            Vector2Int cell = ClampCell(_Cell);
+            SetCell(cell, _Kind, GetTileVisualKind(cell));
+        }
+
+        public void SetTileVisualKind(Vector2Int _Cell, TileVisualKind _VisualKind)
+        {
+            Vector2Int cell = ClampCell(_Cell);
+            SetCell(cell, GetTileKind(cell), _VisualKind);
+        }
+
+        public void PaintTileVisual(Vector2Int _Cell, TileVisualKind _VisualKind)
+        {
+            SetCell(_Cell, GetDefaultTileKind(_VisualKind), _VisualKind);
+        }
+
+        public void SetCell(Vector2Int _Cell, TileKind _Kind, TileVisualKind _VisualKind)
+        {
+            Vector2Int cell = ClampCell(_Cell);
+            TileKind kind = cell == PlayerStartCell || cell == MonsterSpawnCell ? TileKind.Walkable : _Kind;
+            if (kind == TileKind.Walkable && _VisualKind == DefaultVisualKind)
+            {
+                RemoveTileOverride(cell);
+                return;
+            }
+
+            if (CellOverrides == null)
+                CellOverrides = Array.Empty<MvpTileCellSettings>();
+
+            for (int i = 0; i < CellOverrides.Length; i++)
+            {
+                MvpTileCellSettings overrideCell = CellOverrides[i];
+                if (overrideCell == null || overrideCell.Cell != cell)
+                    continue;
+
+                overrideCell.Kind = kind;
+                overrideCell.VisualKind = _VisualKind;
+                return;
+            }
+
+            Array.Resize(ref CellOverrides, CellOverrides.Length + 1);
+            CellOverrides[CellOverrides.Length - 1] = new MvpTileCellSettings(cell, kind, _VisualKind);
+        }
+
+        public void RemoveTileOverride(Vector2Int _Cell)
+        {
+            if (CellOverrides == null || CellOverrides.Length == 0)
+            {
+                CellOverrides = Array.Empty<MvpTileCellSettings>();
+                return;
+            }
+
+            Vector2Int cell = ClampCell(_Cell);
+            List<MvpTileCellSettings> overrides = new List<MvpTileCellSettings>(CellOverrides.Length);
+            foreach (MvpTileCellSettings overrideCell in CellOverrides)
+            {
+                if (overrideCell != null && overrideCell.Cell != cell)
+                    overrides.Add(overrideCell);
+            }
+
+            CellOverrides = overrides.ToArray();
+        }
+
+        private void NormalizeSpritePalette()
+        {
+            if (SpritePalette == null)
+                SpritePalette = Array.Empty<MvpTileSpriteSettings>();
+
+            Array visualKinds = Enum.GetValues(typeof(TileVisualKind));
+            List<MvpTileSpriteSettings> normalized = new List<MvpTileSpriteSettings>(visualKinds.Length);
+            foreach (object visualKindValue in visualKinds)
+            {
+                TileVisualKind visualKind = (TileVisualKind)visualKindValue;
+                MvpTileSpriteSettings spriteSettings = GetSpriteSettings(visualKind) ?? MvpTileSpriteSettings.CreateDefault(visualKind);
+                spriteSettings.VisualKind = visualKind;
+                spriteSettings.EnsureDefaults();
+                normalized.Add(spriteSettings);
+            }
+
+            SpritePalette = normalized.ToArray();
+        }
+
+        private void NormalizeCellOverrides()
+        {
+            if (CellOverrides == null || CellOverrides.Length == 0)
+            {
+                CellOverrides = Array.Empty<MvpTileCellSettings>();
+                return;
+            }
+
+            List<MvpTileCellSettings> normalized = new List<MvpTileCellSettings>(CellOverrides.Length);
+            HashSet<Vector2Int> seenCells = new HashSet<Vector2Int>();
+
+            for (int i = CellOverrides.Length - 1; i >= 0; i--)
+            {
+                MvpTileCellSettings overrideCell = CellOverrides[i];
+                if (overrideCell == null)
+                    continue;
+
+                overrideCell.Cell = ClampCell(overrideCell.Cell);
+                if (!Enum.IsDefined(typeof(TileVisualKind), overrideCell.VisualKind))
+                    overrideCell.VisualKind = DefaultVisualKind;
+
+                if ((overrideCell.Kind == TileKind.Walkable && overrideCell.VisualKind == DefaultVisualKind) || seenCells.Contains(overrideCell.Cell))
+                    continue;
+
+                seenCells.Add(overrideCell.Cell);
+                normalized.Insert(0, overrideCell);
+            }
+
+            CellOverrides = normalized.ToArray();
+        }
+
+        private MvpTileCellSettings FindCellOverride(Vector2Int _Cell)
+        {
+            if (CellOverrides == null)
+            {
+                return null;
+            }
+
+            foreach (MvpTileCellSettings overrideCell in CellOverrides)
+            {
+                if (overrideCell != null && overrideCell.Cell == _Cell)
+                {
+                    return overrideCell;
+                }
+            }
+
+            return null;
+        }
+    }
+
+    [Serializable]
+    public sealed class MvpTileSpriteSettings
+    {
+        public TileVisualKind VisualKind = TileVisualKind.Ground;
+        public Sprite Sprite;
+        public Color Tint = Color.white;
+        public Vector2 DrawSizeInCells = Vector2.one;
+        public Vector3 LocalOffset = Vector3.zero;
+        public int SortingOffset;
+        public TileKind DefaultKind = TileKind.Walkable;
+
+        public MvpTileSpriteSettings()
+        {
+        }
+
+        public MvpTileSpriteSettings(TileVisualKind _VisualKind, TileKind _DefaultKind)
+        {
+            VisualKind = _VisualKind;
+            DefaultKind = _DefaultKind;
+            Tint = Color.white;
+        }
+
+        public void EnsureDefaults()
+        {
+            if (!Enum.IsDefined(typeof(TileVisualKind), VisualKind))
+                VisualKind = TileVisualKind.Ground;
+
+            DrawSizeInCells = new Vector2(
+                Mathf.Max(0.01f, DrawSizeInCells.x),
+                Mathf.Max(0.01f, DrawSizeInCells.y));
+        }
+
+        public static MvpTileSpriteSettings[] CreateDefaultPalette()
+        {
+            Array visualKinds = Enum.GetValues(typeof(TileVisualKind));
+            MvpTileSpriteSettings[] palette = new MvpTileSpriteSettings[visualKinds.Length];
+            for (int i = 0; i < visualKinds.Length; i++)
+            {
+                object visualKindValue = visualKinds.GetValue(i);
+                palette[i] = CreateDefault((TileVisualKind)visualKindValue);
+            }
+
+            return palette;
+        }
+
+        public static MvpTileSpriteSettings CreateDefault(TileVisualKind _VisualKind)
+        {
+            return new MvpTileSpriteSettings(_VisualKind, GetDefaultKind(_VisualKind));
+        }
+
+        private static TileKind GetDefaultKind(TileVisualKind _VisualKind)
+        {
+            switch (_VisualKind)
+            {
+                case TileVisualKind.Wall:
+                case TileVisualKind.Tree:
+                case TileVisualKind.Water:
+                    return TileKind.Blocked;
+                default:
+                    return TileKind.Walkable;
+            }
+        }
+    }
+
+    [Serializable]
+    public sealed class MvpTileCellSettings
+    {
+        public Vector2Int Cell;
+        public TileKind Kind = TileKind.Walkable;
+        public TileVisualKind VisualKind = TileVisualKind.Ground;
+
+        public MvpTileCellSettings()
+        {
+        }
+
+        public MvpTileCellSettings(Vector2Int _Cell, TileKind _Kind)
+        {
+            Cell = _Cell;
+            Kind = _Kind;
+            VisualKind = TileVisualKind.Ground;
+        }
+
+        public MvpTileCellSettings(Vector2Int _Cell, TileKind _Kind, TileVisualKind _VisualKind)
+        {
+            Cell = _Cell;
+            Kind = _Kind;
+            VisualKind = _VisualKind;
+        }
     }
 
     [Serializable]
@@ -104,6 +529,7 @@ namespace IdleRPG.Runtime.Configuration
             if (AutoCombat == null) AutoCombat = new MvpAutoCombatSettings();
             NameLabelCharacterSize = Mathf.Max(0.01f, NameLabelCharacterSize);
             NameLabelFontSize = Mathf.Max(1, NameLabelFontSize);
+            AutoCombat.EnsureDefaults();
         }
     }
 
@@ -124,10 +550,21 @@ namespace IdleRPG.Runtime.Configuration
     {
         [Min(0f)] public float InitialAttackDelayMin = 0f;
         [Min(0f)] public float InitialAttackDelayMax = 0.15f;
+        [Tooltip("Off by default. Enable only when actors should step through tile cells during combat.")]
+        public bool UseTileMovement = false;
+        [Tooltip("Distance used to snap movement to its destination.")]
+        [Min(0.001f)] public float TileArrivalThreshold = 0.03f;
 
         public float ClampInitialDelayMax()
         {
             return Mathf.Max(InitialAttackDelayMin, InitialAttackDelayMax);
+        }
+
+        public void EnsureDefaults()
+        {
+            InitialAttackDelayMin = Mathf.Max(0f, InitialAttackDelayMin);
+            InitialAttackDelayMax = Mathf.Max(InitialAttackDelayMin, InitialAttackDelayMax);
+            TileArrivalThreshold = Mathf.Max(0.001f, TileArrivalThreshold);
         }
     }
 
@@ -139,6 +576,20 @@ namespace IdleRPG.Runtime.Configuration
 
         [Tooltip("Offset added for repeated spawns in the same stage.")]
         public Vector3 RepeatedSpawnOffset = new Vector3(0.35f, 0f, 0f);
+
+        [Tooltip("Uses tile coordinates when a Tile Map Layout exists in the scene.")]
+        public bool UseTileSpawnOffset = true;
+
+        [Tooltip("Cell offset added for repeated spawns in the same stage.")]
+        public Vector2Int RepeatedSpawnCellOffset = new Vector2Int(0, 1);
+
+        public void EnsureDefaults()
+        {
+            if (RepeatedSpawnCellOffset == Vector2Int.zero)
+            {
+                RepeatedSpawnCellOffset = new Vector2Int(0, 1);
+            }
+        }
     }
 
     [Serializable]

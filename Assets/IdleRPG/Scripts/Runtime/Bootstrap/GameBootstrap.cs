@@ -1,6 +1,7 @@
 using IdleRPG.Runtime.Actors;
 using IdleRPG.Runtime.Combat;
 using IdleRPG.Runtime.Configuration;
+using IdleRPG.Runtime.Maps;
 using IdleRPG.Runtime.Stages;
 using IdleRPG.Runtime.UI;
 using UnityEngine;
@@ -45,10 +46,13 @@ namespace IdleRPG.Runtime.Bootstrap
             MvpSceneDesignerSettings designerSettings = MvpSceneDesignerSettings.CreateDefault();
 
             Camera camera = EnsureCamera(designerSettings.Camera);
-            Sprite sprite = GeneratedSpriteFactory.CreateUnitSprite();
+            Sprite unitSprite = GeneratedSpriteFactory.CreateUnitSprite();
+            Sprite tileSprite = GeneratedSpriteFactory.CreateSquareTileSprite();
+            TileMapLayout tileMap = CreateMap(tileSprite, designerSettings.World);
+            Transform monsterSpawnPoint = CreateSpawnPoint(tileMap, designerSettings.World);
 
             BattleContext context = gameObject.AddComponent<BattleContext>();
-            ActorFactory actorFactory = new ActorFactory(sprite, designerSettings.Actors);
+            ActorFactory actorFactory = new ActorFactory(unitSprite, designerSettings.Actors);
 
             StageController stageController = gameObject.AddComponent<StageController>();
             stageController.Initialize(new StageController.RuntimeSetup
@@ -56,17 +60,20 @@ namespace IdleRPG.Runtime.Bootstrap
                 Database = contentSettings.CreateDatabase(),
                 Context = context,
                 Factory = actorFactory,
+                MonsterSpawnPoint = monsterSpawnPoint,
                 RuntimeSettings = designerSettings.Stage,
                 ContentSettings = contentSettings,
                 ActorSettings = designerSettings.Actors,
-                PlayerStartPosition = designerSettings.World.PlayerStartPosition,
-                SpawnSettings = designerSettings.Spawn
+                PlayerStartPosition = tileMap != null
+                    ? tileMap.CellToActorWorld(designerSettings.World.TileMap.PlayerStartCell)
+                    : designerSettings.World.PlayerStartPosition,
+                SpawnSettings = designerSettings.Spawn,
+                TileMap = tileMap
             });
 
             CombatHud hud = gameObject.AddComponent<CombatHud>();
             hud.Initialize(stageController, context);
 
-            CreateGround(sprite, designerSettings.World);
             camera.transform.position = designerSettings.Camera.Position;
         }
 
@@ -87,16 +94,36 @@ namespace IdleRPG.Runtime.Bootstrap
             return camera;
         }
 
-        private static void CreateGround(Sprite _Sprite, MvpWorldLayoutSettings _Settings)
+        private static TileMapLayout CreateMap(Sprite _TileSprite, MvpWorldLayoutSettings _Settings)
         {
+            _Settings.EnsureDefaults();
+            if (_Settings.TileMap.Enabled)
+            {
+                GameObject mapObject = new GameObject("Combat Tile Map");
+                TileMapLayout tileMap = mapObject.AddComponent<TileMapLayout>();
+                tileMap.Configure(_Settings.TileMap);
+                tileMap.RebuildVisuals(_TileSprite);
+                return tileMap;
+            }
+
             GameObject ground = new GameObject("Combat Ground");
             ground.transform.position = _Settings.GroundPosition;
             ground.transform.localScale = _Settings.GroundScale;
 
             SpriteRenderer renderer = ground.AddComponent<SpriteRenderer>();
-            renderer.sprite = _Sprite;
+            renderer.sprite = GeneratedSpriteFactory.CreateUnitSprite();
             renderer.color = _Settings.GroundColor;
             renderer.sortingOrder = _Settings.GroundSortingOrder;
+            return null;
+        }
+
+        private static Transform CreateSpawnPoint(TileMapLayout _TileMap, MvpWorldLayoutSettings _Settings)
+        {
+            GameObject spawnPoint = new GameObject("Monster Spawn Point");
+            spawnPoint.transform.position = _TileMap != null
+                ? _TileMap.CellToActorWorld(_Settings.TileMap.MonsterSpawnCell)
+                : _Settings.MonsterSpawnPosition;
+            return spawnPoint.transform;
         }
     }
 }

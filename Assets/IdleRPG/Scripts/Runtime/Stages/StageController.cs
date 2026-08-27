@@ -7,6 +7,7 @@ using IdleRPG.Domain.Data;
 using IdleRPG.Runtime.Actors;
 using IdleRPG.Runtime.Combat;
 using IdleRPG.Runtime.Configuration;
+using IdleRPG.Runtime.Maps;
 using UnityEngine;
 
 namespace IdleRPG.Runtime.Stages
@@ -26,6 +27,7 @@ namespace IdleRPG.Runtime.Stages
             public MvpActorViewSettings ActorSettings = MvpActorViewSettings.CreateDefault();
             public Vector3 PlayerStartPosition = DefaultPlayerStartPosition;
             public MvpMonsterSpawnSettings SpawnSettings = new MvpMonsterSpawnSettings();
+            public TileMapLayout TileMap;
         }
 
         private RuntimeContentDatabase Database;
@@ -36,6 +38,7 @@ namespace IdleRPG.Runtime.Stages
         private MvpGameContentSettings ContentSettings = MvpGameContentSettings.CreateDefault();
         private MvpActorViewSettings ActorSettings = MvpActorViewSettings.CreateDefault();
         private MvpMonsterSpawnSettings SpawnSettings = new MvpMonsterSpawnSettings();
+        private TileMapLayout TileMap;
         private CombatActor PlayerActor;
         private CombatActor ActiveMonsterActor;
         private MonsterDefinition ActiveMonsterDefinition;
@@ -68,10 +71,13 @@ namespace IdleRPG.Runtime.Stages
             ContentSettings = _Setup.ContentSettings ?? MvpGameContentSettings.CreateDefault();
             ActorSettings = _Setup.ActorSettings ?? MvpActorViewSettings.CreateDefault();
             SpawnSettings = _Setup.SpawnSettings ?? new MvpMonsterSpawnSettings();
+            TileMap = _Setup.TileMap;
             PlayerStartPosition = _Setup.PlayerStartPosition;
 
             ContentSettings.EnsureDefaults();
             ActorSettings.EnsureDefaults();
+            SpawnSettings.EnsureDefaults();
+            Context.SetTileMap(TileMap);
 
             Spawner = gameObject.GetComponent<MonsterSpawner>();
             if (Spawner == null)
@@ -79,6 +85,7 @@ namespace IdleRPG.Runtime.Stages
 
             Spawner.Initialize(Context, Factory, SpawnSettings);
             Spawner.SetSpawnPoint(MonsterSpawnPoint);
+            Spawner.SetTileMap(TileMap);
 
             BeginStage(Mathf.Max(1, RuntimeSettings.StartStageNumber));
         }

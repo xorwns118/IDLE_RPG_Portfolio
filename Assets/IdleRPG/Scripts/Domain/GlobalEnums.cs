@@ -16,4 +16,19 @@ namespace IdleRPG.Domain
         Hit,
         Dead
     }
+
+    public enum TileKind
+    {
+        Walkable,
+        Blocked
+    }
+
+    public enum TileVisualKind
+    {
+        Ground,
+        Wall,
+        Tree,
+        Water,
+        Decoration
+    }
 }

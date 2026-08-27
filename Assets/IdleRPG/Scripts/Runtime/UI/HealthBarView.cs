@@ -9,6 +9,8 @@ namespace IdleRPG.Runtime.UI
         private CombatActor Actor;
         private MvpHealthBarSettings Settings = new MvpHealthBarSettings();
         private Transform Fill;
+        private SpriteRenderer BackgroundRenderer;
+        private SpriteRenderer FillRenderer;
 
         public void Initialize(CombatActor _Actor, Sprite _Sprite)
         {
@@ -27,6 +29,19 @@ namespace IdleRPG.Runtime.UI
                 _FillColor,
                 Settings.FillSortingOrder,
                 Settings.Offset + new Vector3(0f, 0f, Settings.FillDepthOffset));
+        }
+
+        public void SetSortingBase(int _SortingOrder)
+        {
+            if (BackgroundRenderer != null)
+            {
+                BackgroundRenderer.sortingOrder = _SortingOrder;
+            }
+
+            if (FillRenderer != null)
+            {
+                FillRenderer.sortingOrder = _SortingOrder + 1;
+            }
         }
 
         private void Update()
@@ -59,6 +74,15 @@ namespace IdleRPG.Runtime.UI
             renderer.sprite = _Sprite;
             renderer.color = _Color;
             renderer.sortingOrder = _SortingOrder;
+
+            if (_BarName == "HP Background")
+            {
+                BackgroundRenderer = renderer;
+            }
+            else if (_BarName == "HP Fill")
+            {
+                FillRenderer = renderer;
+            }
 
             return barObject.transform;
         }

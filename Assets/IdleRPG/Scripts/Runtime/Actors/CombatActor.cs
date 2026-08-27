@@ -17,6 +17,7 @@ namespace IdleRPG.Runtime.Actors
         public CombatActor CurrentTarget { get; private set; }
         public ActorTeam Team => Model != null ? Model.Team : ActorTeam.Monster;
         public bool IsAlive => Model != null && !Model.IsDead;
+        public int SortingOrder => ActorSpriteRenderer != null ? ActorSpriteRenderer.sortingOrder : 0;
 
         public event Action<CombatActor> Died;
         public event Action<CombatActor, CombatActor, DamageResult> DamageTaken;
@@ -43,6 +44,14 @@ namespace IdleRPG.Runtime.Actors
             name = _Model.DisplayName;
 
             Model.Died += HandleModelDied;
+        }
+
+        public void SetSortingOrder(int _SortingOrder)
+        {
+            if (ActorSpriteRenderer != null)
+            {
+                ActorSpriteRenderer.sortingOrder = _SortingOrder;
+            }
         }
 
         public void SetTarget(CombatActor _Target)

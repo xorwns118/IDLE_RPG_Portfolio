@@ -1,6 +1,7 @@
 using IdleRPG.Runtime.Actors;
 using IdleRPG.Runtime.Combat;
 using IdleRPG.Runtime.Configuration;
+using IdleRPG.Runtime.Maps;
 using IdleRPG.Runtime.Stages;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -31,17 +32,21 @@ namespace IdleRPG.Runtime.Bootstrap
         [HideInInspector, SerializeField] private Button RestartButton;
 
         private Sprite PreviewSprite;
+        private Sprite TileSprite;
+        private TileMapLayout TileMap;
         private StageController RuntimeStageController;
         private BattleContext RuntimeBattleContext;
         private bool RuntimeStarted;
 
+        public MvpSceneDesignerSettings DesignerEditableSettings => DesignerSettings;
+        public TileMapLayout CurrentTileMap => TileMap;
+
         private void OnEnable()
         {
             EnsureDesignerSettings();
+
             if (Application.isPlaying)
-            {
                 EnsureSceneLayout();
-            }
         }
 
         private void OnValidate()
@@ -62,9 +67,7 @@ namespace IdleRPG.Runtime.Bootstrap
         private void Update()
         {
             if (Application.isPlaying)
-            {
                 RefreshHud();
-            }
         }
 
         [ContextMenu("Rebuild MVP Scene Layout")]
@@ -77,9 +80,7 @@ namespace IdleRPG.Runtime.Bootstrap
         private void StartRuntime()
         {
             if (RuntimeStarted)
-            {
                 return;
-            }
 
             RuntimeStarted = true;
             RuntimeBattleContext = GetOrAdd<BattleContext>(gameObject);
@@ -96,7 +97,8 @@ namespace IdleRPG.Runtime.Bootstrap
                 ContentSettings = GameContent,
                 ActorSettings = DesignerSettings.Actors,
                 PlayerStartPosition = GetPlayerStartPosition(),
-                SpawnSettings = DesignerSettings.Spawn
+                SpawnSettings = DesignerSettings.Spawn,
+                TileMap = TileMap
             });
 
             BindRestartButton();
@@ -105,22 +107,16 @@ namespace IdleRPG.Runtime.Bootstrap
 
         private Vector3 GetPlayerStartPosition()
         {
-            return PlayerStartPoint != null
-                ? PlayerStartPoint.position
-                : DesignerSettings.World.PlayerStartPosition;
+            return PlayerStartPoint != null ? PlayerStartPoint.position : DesignerSettings.World.PlayerStartPosition;
         }
 
         private void EnsureDesignerSettings()
         {
             if (GameContent == null)
-            {
                 GameContent = MvpGameContentSettings.CreateDefault();
-            }
 
             if (DesignerSettings == null)
-            {
                 DesignerSettings = MvpSceneDesignerSettings.CreateDefault();
-            }
 
             GameContent.EnsureDefaults();
             DesignerSettings.EnsureDefaults();
@@ -159,23 +155,53 @@ namespace IdleRPG.Runtime.Bootstrap
             MvpWorldLayoutSettings worldSettings = DesignerSettings.World;
             Transform world = FindOrCreateChild(transform, "World");
 
-            Transform ground = FindOrCreateChild(world, "Combat Ground");
-            ground.localPosition = worldSettings.GroundPosition;
-            ground.localScale = worldSettings.GroundScale;
-            SpriteRenderer groundRenderer = GetOrAdd<SpriteRenderer>(ground.gameObject);
-            groundRenderer.sprite = EnsureSprite();
-            groundRenderer.color = worldSettings.GroundColor;
-            groundRenderer.sortingOrder = worldSettings.GroundSortingOrder;
+            if (worldSettings.TileMap.Enabled)
+            {
+                RemoveChildIfExists(world, "Combat Ground");
+                Transform tileMapRoot = FindOrCreateChild(world, "Combat Tile Map");
+                tileMapRoot.localPosition = Vector3.zero;
+                tileMapRoot.localRotation = Quaternion.identity;
+                tileMapRoot.localScale = Vector3.one;
+                RemoveComponentIfExists<SpriteRenderer>(tileMapRoot.gameObject);
+
+                TileMap = GetOrAdd<TileMapLayout>(tileMapRoot.gameObject);
+                TileMap.Configure(worldSettings.TileMap);
+                TileMap.RebuildVisuals(EnsureTileSprite());
+
+                Vector3 playerLocalPosition = world.InverseTransformPoint(TileMap.CellToActorWorld(worldSettings.TileMap.PlayerStartCell));
+                Vector3 monsterLocalPosition = world.InverseTransformPoint(TileMap.CellToActorWorld(worldSettings.TileMap.MonsterSpawnCell));
+                PlayerStartPoint = FindOrCreateChild(world, "Player Start Point");
+                ConfigureStartPoint(PlayerStartPoint, playerLocalPosition);
+
+                MonsterSpawnPoint = FindOrCreateChild(world, "Monster Spawn Point");
+                MonsterSpawnPoint.localPosition = monsterLocalPosition;
+                MonsterSpawnPoint.localRotation = Quaternion.identity;
+                MonsterSpawnPoint.localScale = Vector3.one;
+            }
+            else
+            {
+                RemoveChildIfExists(world, "Combat Tile Map");
+                TileMap = null;
+
+                Transform ground = FindOrCreateChild(world, "Combat Ground");
+                ground.localPosition = worldSettings.GroundPosition;
+                ground.localScale = worldSettings.GroundScale;
+                SpriteRenderer groundRenderer = GetOrAdd<SpriteRenderer>(ground.gameObject);
+                groundRenderer.sprite = EnsureSprite();
+                groundRenderer.color = worldSettings.GroundColor;
+                groundRenderer.sortingOrder = worldSettings.GroundSortingOrder;
+
+                PlayerStartPoint = FindOrCreateChild(world, "Player Start Point");
+                ConfigureStartPoint(PlayerStartPoint, worldSettings.PlayerStartPosition);
+
+                MonsterSpawnPoint = FindOrCreateChild(world, "Monster Spawn Point");
+                MonsterSpawnPoint.localPosition = worldSettings.MonsterSpawnPosition;
+                MonsterSpawnPoint.localRotation = Quaternion.identity;
+                MonsterSpawnPoint.localScale = Vector3.one;
+            }
 
             RemoveChildIfExists(world, "Player Actor");
             RemoveChildIfExists(world, "Monster Actor");
-
-            PlayerStartPoint = FindOrCreateChild(world, "Player Start Point");
-            ConfigureStartPoint(PlayerStartPoint, worldSettings.PlayerStartPosition);
-
-            MonsterSpawnPoint = FindOrCreateChild(world, "Monster Spawn Point");
-            MonsterSpawnPoint.localPosition = worldSettings.MonsterSpawnPosition;
-            MonsterSpawnPoint.localScale = Vector3.one;
         }
 
         private void ConfigureStartPoint(Transform _Marker, Vector3 _Position)
@@ -373,9 +399,7 @@ namespace IdleRPG.Runtime.Bootstrap
         private void EnsureEventSystem()
         {
             if (FindObjectOfType<EventSystem>() != null)
-            {
                 return;
-            }
 
             GameObject eventSystemObject = new GameObject("EventSystem");
             eventSystemObject.AddComponent<EventSystem>();
@@ -385,9 +409,7 @@ namespace IdleRPG.Runtime.Bootstrap
         private void RefreshHud()
         {
             if (StageText == null || ResourceText == null || PlayerText == null || EnemyText == null || LogText == null)
-            {
                 return;
-            }
 
             MvpHudSettings hudSettings = DesignerSettings.Hud;
             if (RuntimeStageController == null)
@@ -427,9 +449,7 @@ namespace IdleRPG.Runtime.Bootstrap
         private void BindRestartButton()
         {
             if (RestartButton == null)
-            {
                 return;
-            }
 
             RestartButton.onClick.RemoveListener(HandleRestartClicked);
             RestartButton.onClick.AddListener(HandleRestartClicked);
@@ -438,9 +458,7 @@ namespace IdleRPG.Runtime.Bootstrap
         private void HandleRestartClicked()
         {
             if (RuntimeStageController == null)
-            {
                 return;
-            }
 
             RuntimeStageController.RestartCurrentStage();
             RefreshHud();
@@ -449,17 +467,13 @@ namespace IdleRPG.Runtime.Bootstrap
         private void SetRestartPanelVisible(bool _Visible)
         {
             if (RestartPanel != null && RestartPanel.activeSelf != _Visible)
-            {
                 RestartPanel.SetActive(_Visible);
-            }
         }
 
         private string FormatActor(CombatActor _Actor)
         {
             if (_Actor == null || _Actor.Model == null)
-            {
                 return DesignerSettings.Hud.EmptyActorText;
-            }
 
             return DesignerSettings.Hud.FormatActor(
                 _Actor.Model.DisplayName,
@@ -471,9 +485,7 @@ namespace IdleRPG.Runtime.Bootstrap
         private static float GetHpPercent(CombatActor _Actor)
         {
             if (_Actor == null || _Actor.Model == null)
-            {
                 return 0f;
-            }
 
             return Mathf.Clamp01(_Actor.Model.CurrentHp / _Actor.Model.Stats.MaxHp);
         }
@@ -481,28 +493,30 @@ namespace IdleRPG.Runtime.Bootstrap
         private static void SetFill(Image _Image, float _Value)
         {
             if (_Image != null)
-            {
                 _Image.fillAmount = Mathf.Clamp01(_Value);
-            }
         }
 
         private Sprite EnsureSprite()
         {
             if (PreviewSprite == null)
-            {
                 PreviewSprite = GeneratedSpriteFactory.CreateUnitSprite();
-            }
 
             return PreviewSprite;
+        }
+
+        private Sprite EnsureTileSprite()
+        {
+            if (TileSprite == null)
+                TileSprite = GeneratedSpriteFactory.CreateSquareTileSprite();
+
+            return TileSprite;
         }
 
         private static Transform FindOrCreateChild(Transform _Parent, string _ChildName)
         {
             Transform child = _Parent.Find(_ChildName);
             if (child != null)
-            {
                 return child;
-            }
 
             GameObject childObject = new GameObject(_ChildName);
             childObject.transform.SetParent(_Parent, false);
@@ -513,36 +527,24 @@ namespace IdleRPG.Runtime.Bootstrap
         {
             Transform child = _Parent.Find(_ChildName);
             if (child == null)
-            {
                 return;
-            }
 
             if (Application.isPlaying)
-            {
                 Destroy(child.gameObject);
-            }
             else
-            {
                 DestroyImmediate(child.gameObject);
-            }
         }
 
         private static void RemoveComponentIfExists<T>(GameObject _GameObject) where T : Component
         {
             T component = _GameObject.GetComponent<T>();
             if (component == null)
-            {
                 return;
-            }
 
             if (Application.isPlaying)
-            {
                 Destroy(component);
-            }
             else
-            {
                 DestroyImmediate(component);
-            }
         }
 
         private static RectTransform FindOrCreateRectChild(Transform _Parent, string _ChildName)
@@ -552,18 +554,12 @@ namespace IdleRPG.Runtime.Bootstrap
             {
                 RectTransform rect = child.GetComponent<RectTransform>();
                 if (rect != null)
-                {
                     return rect;
-                }
 
                 if (Application.isPlaying)
-                {
                     Destroy(child.gameObject);
-                }
                 else
-                {
                     DestroyImmediate(child.gameObject);
-                }
             }
 
             GameObject childObject = new GameObject(_ChildName, typeof(RectTransform));

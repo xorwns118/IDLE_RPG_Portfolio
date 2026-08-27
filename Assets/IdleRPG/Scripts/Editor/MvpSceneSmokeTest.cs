@@ -1,10 +1,14 @@
 #if UNITY_EDITOR
 using System;
+using IdleRPG.Domain;
 using IdleRPG.Runtime.Actors;
 using IdleRPG.Runtime.Bootstrap;
 using IdleRPG.Runtime.Combat;
+using IdleRPG.Runtime.Configuration;
 using IdleRPG.Runtime.Data;
+using IdleRPG.Runtime.Maps;
 using IdleRPG.Runtime.Stages;
+using IdleRPG.Runtime.UI;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -28,6 +32,7 @@ namespace IdleRPG.Editor
                 RunScene(scenePath);
             }
 
+            RequirePrefabProfiles();
             Debug.Log("MVP scene smoke test passed.");
         }
 
@@ -47,7 +52,8 @@ namespace IdleRPG.Editor
 
             Transform root = controller.transform;
             Transform playerStartPoint = RequireTransform(root, "World/Player Start Point");
-            Transform ground = RequireTransform(root, "World/Combat Ground");
+            Transform tileMapRoot = RequireTransform(root, "World/Combat Tile Map");
+            Transform tiles = RequireTransform(tileMapRoot, "Tiles");
             Transform spawnPoint = RequireTransform(root, "World/Monster Spawn Point");
             Transform canvas = RequireTransform(root, "MVP HUD Canvas");
             Transform panel = RequireTransform(canvas, "Status Panel");
@@ -56,7 +62,7 @@ namespace IdleRPG.Editor
             RequireStartPoint(playerStartPoint);
             RequireMissingTransform(root, "World/Player Actor");
             RequireMissingTransform(root, "World/Monster Actor");
-            Require(ground.GetComponent<SpriteRenderer>() != null, "Combat Ground needs SpriteRenderer.");
+            RequireTileMap(tileMapRoot, tiles, playerStartPoint, spawnPoint);
             Require(spawnPoint != null, "Monster Spawn Point is missing.");
 
             Require(canvas.GetComponent<Canvas>() != null, "MVP HUD Canvas needs Canvas.");
@@ -108,7 +114,13 @@ namespace IdleRPG.Editor
 
             SerializedProperty designerSettings = RequireProperty(_SerializedObject, "DesignerSettings");
             Require(designerSettings.FindPropertyRelative("Camera") != null, "DesignerSettings needs Camera settings.");
-            Require(designerSettings.FindPropertyRelative("World") != null, "DesignerSettings needs World settings.");
+            SerializedProperty worldSettings = designerSettings.FindPropertyRelative("World");
+            Require(worldSettings != null, "DesignerSettings needs World settings.");
+            SerializedProperty tileMapSettings = worldSettings.FindPropertyRelative("TileMap");
+            Require(tileMapSettings != null, "World settings need Tile Map settings.");
+            Require(tileMapSettings.FindPropertyRelative("DefaultVisualKind") != null, "Tile Map settings need Default Visual Kind.");
+            Require(tileMapSettings.FindPropertyRelative("SpritePalette") != null, "Tile Map settings need Sprite Palette.");
+            Require(tileMapSettings.FindPropertyRelative("CellOverrides") != null, "Tile Map settings need Cell Overrides.");
             Require(designerSettings.FindPropertyRelative("Actors") != null, "DesignerSettings needs Actor View settings.");
             Require(designerSettings.FindPropertyRelative("Spawn") != null, "DesignerSettings needs Spawn settings.");
             Require(designerSettings.FindPropertyRelative("Hud") != null, "DesignerSettings needs HUD settings.");
@@ -162,6 +174,32 @@ namespace IdleRPG.Editor
             Require(image.GetComponent<Image>() != null, _Path + " needs Image.");
         }
 
+        private static void RequireTileMap(Transform _TileMapRoot, Transform _Tiles, Transform _PlayerStartPoint, Transform _MonsterSpawnPoint)
+        {
+            TileMapLayout tileMap = _TileMapRoot.GetComponent<TileMapLayout>();
+            Require(tileMap != null, "Combat Tile Map needs TileMapLayout.");
+            Require(tileMap.IsEnabled, "Combat Tile Map should be enabled by default.");
+            Require(_TileMapRoot.GetComponent<SpriteRenderer>() == null, "Combat Tile Map should not keep the legacy ground SpriteRenderer.");
+
+            int expectedTileCount = tileMap.Settings.Columns * tileMap.Settings.Rows;
+            Require(_Tiles.childCount == expectedTileCount, "Tile count does not match Tile Map settings.");
+            Require(_Tiles.Find("Tile 0,0") != null, "Tile Map needs Tile 0,0.");
+            Require(_Tiles.Find("Tile " + (tileMap.Settings.Columns - 1) + "," + (tileMap.Settings.Rows - 1)) != null, "Tile Map needs the last tile.");
+            Require(tileMap.Settings.CellOverrides != null, "Tile Map Cell Overrides should be initialized.");
+            Require(tileMap.Settings.SpritePalette != null, "Tile Map Sprite Palette should be initialized.");
+            Require(tileMap.Settings.GetSpriteSettings(TileVisualKind.Ground) != null, "Tile Map Sprite Palette needs Ground.");
+            Require(tileMap.Settings.GetSpriteSettings(TileVisualKind.Wall) != null, "Tile Map Sprite Palette needs Wall.");
+            Require(tileMap.Settings.GetDefaultTileKind(TileVisualKind.Wall) == TileKind.Blocked, "Wall tiles should default to blocked.");
+            Require(tileMap.IsWalkable(tileMap.Settings.PlayerStartCell), "Player Start Cell should stay walkable.");
+            Require(tileMap.IsWalkable(tileMap.Settings.MonsterSpawnCell), "Monster Spawn Cell should stay walkable.");
+            Require(Mathf.Abs(tileMap.Settings.CellSize.x - tileMap.Settings.CellSize.y) < 0.001f, "Tile Map should use square cells.");
+
+            Vector3 expectedPlayerStart = tileMap.CellToActorWorld(tileMap.Settings.PlayerStartCell);
+            Vector3 expectedMonsterSpawn = tileMap.CellToActorWorld(tileMap.Settings.MonsterSpawnCell);
+            Require(Vector3.Distance(_PlayerStartPoint.position, expectedPlayerStart) < 0.01f, "Player Start Point is not placed on the configured tile.");
+            Require(Vector3.Distance(_MonsterSpawnPoint.position, expectedMonsterSpawn) < 0.01f, "Monster Spawn Point is not placed on the configured tile.");
+        }
+
         private static void RequireRuntimeBoot()
         {
             GameObject runtimeRoot = new GameObject("Runtime Smoke Root");
@@ -171,6 +209,19 @@ namespace IdleRPG.Editor
                 BattleContext context = runtimeRoot.AddComponent<BattleContext>();
                 StageController stage = runtimeRoot.AddComponent<StageController>();
                 Transform spawnPoint = CreateSmokeChild(runtimeRoot.transform, "Smoke Spawn Point").transform;
+                MvpSceneDesignerSettings designerSettings = MvpSceneDesignerSettings.CreateDefault();
+                designerSettings.World.TileMap.SetCell(new Vector2Int(2, 2), TileKind.Blocked, TileVisualKind.Wall);
+                TileMapLayout tileMap = CreateSmokeChild(runtimeRoot.transform, "Smoke Tile Map").AddComponent<TileMapLayout>();
+                tileMap.Configure(designerSettings.World.TileMap);
+                spawnPoint.position = tileMap.CellToActorWorld(tileMap.Settings.MonsterSpawnCell);
+
+                Vector2Int blockedCell = new Vector2Int(2, 2);
+                Vector2Int nextCell = tileMap.GetNextCellToward(new Vector2Int(1, 2), new Vector2Int(3, 2), 1);
+                Require(!tileMap.IsWalkable(blockedCell), "Blocked Tile Cell should not be walkable.");
+                Require(tileMap.Settings.GetTileVisualKind(blockedCell) == TileVisualKind.Wall, "Blocked Tile Cell should keep its painted visual kind.");
+                Require(nextCell != blockedCell, "Tile movement should avoid blocked cells.");
+                Require(tileMap.IsWalkable(nextCell), "Tile movement should choose a walkable next cell.");
+                Require(!designerSettings.Actors.AutoCombat.UseTileMovement, "Auto combat should use world movement by default.");
 
                 ActorFactory factory = new ActorFactory(GeneratedSpriteFactory.CreateUnitSprite());
                 stage.Initialize(new StageController.RuntimeSetup
@@ -178,11 +229,17 @@ namespace IdleRPG.Editor
                     Database = DemoContentFactory.CreateWeek1Database(),
                     Context = context,
                     Factory = factory,
-                    MonsterSpawnPoint = spawnPoint
+                    MonsterSpawnPoint = spawnPoint,
+                    PlayerStartPosition = tileMap.CellToActorWorld(tileMap.Settings.PlayerStartCell),
+                    RuntimeSettings = designerSettings.Stage,
+                    ActorSettings = designerSettings.Actors,
+                    SpawnSettings = designerSettings.Spawn,
+                    TileMap = tileMap
                 });
 
                 Require(stage.Player != null, "StageController did not initialize the player.");
                 Require(stage.ActiveMonster != null, "StageController did not initialize the first monster.");
+                Require(context.TileMap == tileMap, "BattleContext did not receive the Tile Map Layout.");
                 Require(stage.Player.Model.DisplayName == "Training Hero", "Player display name was not assigned.");
                 Require(stage.Player.gameObject.name == "Training Hero", "Runtime player object was not created from the Hero model.");
                 Require(stage.ActiveMonster.Model.DisplayName == "Slime S1", "Monster display name was not assigned.");
@@ -207,6 +264,68 @@ namespace IdleRPG.Editor
             {
                 UnityEngine.Object.DestroyImmediate(runtimeRoot);
             }
+        }
+
+        private static void RequirePrefabProfiles()
+        {
+            RequirePrefabProfile(
+                "Assets/IdleRPG/Prefabs/Actors/Hero_Base.prefab",
+                ActorTeam.Player,
+                "player.hero",
+                "Training Hero",
+                140f,
+                16f,
+                0,
+                0);
+
+            RequirePrefabProfile(
+                "Assets/IdleRPG/Prefabs/Monsters/Monster_Base.prefab",
+                ActorTeam.Monster,
+                "monster.base",
+                "Training Monster",
+                32f,
+                5f,
+                5,
+                2);
+        }
+
+        private static void RequirePrefabProfile(
+            string _PrefabPath,
+            ActorTeam _ExpectedTeam,
+            string _ExpectedId,
+            string _ExpectedDisplayName,
+            float _ExpectedMaxHp,
+            float _ExpectedAttackPower,
+            int _ExpectedGoldReward,
+            int _ExpectedExpReward)
+        {
+            GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(_PrefabPath);
+            Require(prefab != null, "Missing prefab asset: " + _PrefabPath);
+            Require(prefab.GetComponent<SpriteRenderer>() != null, _PrefabPath + " needs SpriteRenderer.");
+            Require(prefab.GetComponent<CombatActor>() != null, _PrefabPath + " needs CombatActor.");
+            Require(prefab.GetComponent<HealthBarView>() != null, _PrefabPath + " needs HealthBarView.");
+            Require(prefab.GetComponent<AutoCombatController>() != null, _PrefabPath + " needs AutoCombatController.");
+            Require(prefab.GetComponent<BoxCollider2D>() != null, _PrefabPath + " needs BoxCollider2D.");
+
+            ActorPrefabProfile profile = prefab.GetComponent<ActorPrefabProfile>();
+            Require(profile != null, _PrefabPath + " needs ActorPrefabProfile.");
+            Require(profile.Team == _ExpectedTeam, _PrefabPath + " has wrong team.");
+            Require(profile.Id == _ExpectedId, _PrefabPath + " has wrong id.");
+            Require(profile.DisplayName == _ExpectedDisplayName, _PrefabPath + " has wrong display name.");
+            Require(profile.Stats != null, _PrefabPath + " needs stat settings.");
+            Require(Mathf.Approximately(profile.Stats.MaxHp, _ExpectedMaxHp), _PrefabPath + " has wrong Max HP.");
+            Require(Mathf.Approximately(profile.Stats.AttackPower, _ExpectedAttackPower), _PrefabPath + " has wrong Attack Power.");
+            Require(profile.GoldReward == _ExpectedGoldReward, _PrefabPath + " has wrong gold reward.");
+            Require(profile.ExpReward == _ExpectedExpReward, _PrefabPath + " has wrong EXP reward.");
+
+            RequireNameLabel(prefab.transform, _ExpectedDisplayName);
+            RequireTransform(prefab.transform, "HP Background");
+            RequireTransform(prefab.transform, "HP Fill");
+
+            Transform anchors = RequireTransform(prefab.transform, "Effect Anchors");
+            RequireTransform(anchors, "Hit Point");
+            RequireTransform(anchors, "Projectile Point");
+            RequireTransform(anchors, "Ground Point");
         }
 
         private static GameObject CreateSmokeChild(Transform _Parent, string _Name)

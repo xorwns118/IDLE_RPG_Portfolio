@@ -27,6 +27,11 @@
 
 추가 확인이 필요하면 Unity 메뉴에서 `Idle RPG > Run MVP Scene Smoke Test`를 실행한다.
 
+Actor 프리팹 뼈대가 필요하면 Unity 메뉴에서 `Idle RPG > Prefabs > Actor > Create Actor Prefab`을 연다.
+Monster 프리팹 뼈대가 필요하면 `Idle RPG > Prefabs > Monster > Create Monster Prefab`을 연다.
+기본값으로 바로 생성하려면 각각 `Create Default Actor Prefab`, `Create Default Monster Prefab`을 실행한다.
+타일맵 배치를 조절하려면 `Idle RPG > Maps > Tile Map Editor`를 연다.
+
 ## 씬 구성
 
 두 씬 모두 동일한 MVP 레이아웃을 저장해 두었다.
@@ -38,7 +43,8 @@
 
 - `MVP Scene Controller`: 전체 MVP 씬 구성과 런타임 시작점
 - `World`: 전투 월드 루트
-- `Combat Ground`: 전투 바닥 시각 요소
+- `Combat Tile Map`: 사각형 전투 타일맵 루트
+- `Tiles`: 사각형 타일 시각 요소 묶음
 - `Player Start Point`: Hero 시작 위치를 나타내는 빈 Transform 기준점. 렌더링/전투 컴포넌트는 없음
 - `Monster Spawn Point`: 몬스터 런타임 생성 위치
 - `MVP HUD Canvas`: Screen Space Overlay HUD
@@ -89,15 +95,16 @@ Unity 씬에서 실제로 동작하는 계층이다.
 
 - `MvpSceneController`: 씬 오브젝트, HUD, Actor 배치 및 Play 시 런타임 초기화
 - `MvpGameContentSettings`: Inspector에서 조절 가능한 Player, Monster, Stage 콘텐츠 설정
-- `MvpSceneDesignerSettings`: Inspector에서 조절 가능한 카메라, 월드 배치, Actor 표시, HUD, 재시작 팝업, 스테이지 런타임 설정
-- `GeneratedSpriteFactory`: 임시 흰색 스프라이트 생성
+- `MvpSceneDesignerSettings`: Inspector에서 조절 가능한 카메라, 타일맵, Actor 표시, HUD, 재시작 팝업, 스테이지 런타임 설정
+- `GeneratedSpriteFactory`: 임시 유닛 스프라이트와 사각형 타일 스프라이트 생성
 - `DemoContentFactory`: 기본 Week 1 설정을 `RuntimeContentDatabase`로 변환하는 호환용 팩토리
 - `ActorFactory`: GameObject에 전투 Actor 컴포넌트 묶음, 월드 HP 바, Display Name 라벨 구성
 - `CombatActor`: ActorModel과 SpriteRenderer를 연결하고 피격/사망 이벤트 발행
-- `AutoCombatController`: 가장 가까운 적 탐색, 이동, 기본 공격 수행
-- `BattleContext`: 살아 있는 Actor 등록 및 적 탐색
+- `TileMapLayout`: 사각형 타일맵 생성, 셀/월드 좌표 변환, Sprite Palette 기반 타일 렌더링, 막힌 칸 판정, 경로 첫 칸 계산, y축 기준 정렬 순서 계산
+- `AutoCombatController`: 가장 가까운 적 탐색, 월드 좌표 기반 이동, 기본 공격 수행. `UseTileMovement`를 켜면 기존 타일 이동 경로도 사용할 수 있음
+- `BattleContext`: 살아 있는 Actor 등록 및 월드 거리 기반 적 탐색
 - `StageController`: `RuntimeSetup` 단일 입력으로 스테이지 런타임을 초기화하고, 플레이어 생성/회복, 몬스터 생성, 처치 보상, 다음 스테이지 진행, 현재 Stage 재시작 처리
-- `MonsterSpawner`: 몬스터 생성 위치 기반 스폰
+- `MonsterSpawner`: 몬스터 생성 타일과 반복 스폰 셀 오프셋 기반 스폰
 - `HealthBarView`: 월드 공간 HP 바 갱신
 - `CombatHud`: IMGUI 기반 보조 HUD
 
@@ -110,6 +117,9 @@ MVP 씬 구성과 검증을 위한 에디터 전용 코드다.
 - `MvpSceneAutoLayout`: 씬 오픈, 활성 씬 변경, Play 진입 직전에 MVP 레이아웃 자동 재빌드 및 저장
 - `MvpSceneSmokeTest`: 씬 슬롯, 필수 오브젝트, 필수 컴포넌트, 런타임 초기화 검증
 - `Week1SceneBuilder`: `Week1VerticalSlice` 생성 메뉴 제공
+- `ActorPrefabBuilder`: Actor/Monster 전용 prefab 생성 EditorWindow와 기본 생성 메뉴 제공
+- `TileMapEditorWindow`: 행/열, 셀 크기, 시작/스폰 셀, fallback 색상, Sprite Palette, 칸별 시각 타입/통행 상태를 관리하는 타일맵 EditorWindow
+- `ActorPrefabProfile`: 생성된 prefab에 ID, 표시 이름, 팀, 색상, 스탯, 몬스터 보상 값을 저장하는 프로필 컴포넌트
 
 ## 런타임 흐름
 
@@ -117,8 +127,8 @@ MVP 씬 구성과 검증을 위한 에디터 전용 코드다.
 2. Play 모드 진입 시 `MvpSceneController.Awake()`가 다시 레이아웃을 확인한다.
 3. `BattleContext`와 `StageController`가 컨트롤러 오브젝트에 추가된다.
 4. `MvpSceneController`의 `Game Content` 설정이 `RuntimeContentDatabase`를 만든다.
-5. `StageController.Initialize(RuntimeSetup)`이 `Player Start Point` 위치에 새 Hero를 풀 HP로 생성한 뒤 첫 몬스터를 스폰한다.
-6. `AutoCombatController.Update()`가 매 프레임 적 탐색, 이동, 공격을 수행한다.
+5. `StageController.Initialize(RuntimeSetup)`이 `TileMapLayout`과 `Player Start Point` 위치에 새 Hero를 풀 HP로 생성한 뒤 첫 몬스터를 스폰한다.
+6. `AutoCombatController.Update()`가 매 프레임 월드 거리 기준 적 탐색, 이동, 공격을 수행한다.
 7. 몬스터 사망 시 `StageController`가 보상을 지급하고 처치 수를 증가시킨다.
 8. 처치 수가 요구치에 도달하면 다음 스테이지로 이동한다.
 9. `MvpSceneController.Update()`가 HUD 텍스트와 HP Fill을 갱신한다.
@@ -137,6 +147,14 @@ MVP 씬 구성과 검증을 위한 에디터 전용 코드다.
 - 스모크 테스트에 `StageController.Initialize(RuntimeSetup)` 실행, Player 슬롯 없이 Hero/Monster 런타임 모델 생성, Hero 사망 후 Stage 재시작 검증 추가
 - 2026-08-24 변경 후 Unity Roslyn 기반 스크립트 컴파일 체크 통과
 - 2026-08-24 batchmode 스모크 테스트는 원본 프로젝트가 이미 Unity 에디터에서 열려 있어 실행 차단됨
+- 2026-08-26 Actor 프리팹 뼈대 생성 EditorWindow 추가 및 `Hero_Base`, `Monster_Base` prefab 구조 생성 확인
+- 2026-08-26 임시 프로젝트에서 prefab 생성 메뉴와 기존 MVP 스모크 테스트 batchmode 검증 통과
+- 2026-08-26 Actor/Monster prefab 생성 에디터 분리 및 prefab 스탯 프로필 직렬화 확인
+- 2026-08-26 8x5 타일맵 생성, 타일 좌표 기반 Player/Monster 배치, 타일 이동/정렬 로직, 스모크 테스트 검증 통과
+- 2026-08-27 사각형 타일 배치로 전환, 에디터 타일 그리드 들여쓰기 제거, y축 기준 sorting 검증 추가
+- 2026-08-27 타일 관리 EditorWindow, `TileKind` 전역 enum, 막힌 칸 저장/렌더링/이동 회피 로직 추가
+- 2026-08-27 `TileVisualKind` 전역 enum, Slice PNG용 Sprite Palette, Brush/Paint 기반 타일 시각 타입 편집 기능 추가
+- 2026-08-27 기본 전투 이동과 적 탐색을 월드 좌표 기준으로 조정하고, 타일 이동은 옵션으로 남김
 
 주의:
 
@@ -146,10 +164,11 @@ MVP 씬 구성과 검증을 위한 에디터 전용 코드다.
 
 ## 현재 한계
 
-- 그래픽은 임시 생성 스프라이트 기반이다.
+- 그래픽은 기본적으로 임시 생성 스프라이트 기반이지만, 타일은 Sprite Palette에 Slice PNG Sprite를 할당해 교체할 수 있다.
+- 타일맵은 MVP용 코드 생성 타일과 전용 EditorWindow 기반이며, 아직 Unity Tilemap 에셋/브러시 파이프라인은 아니다.
 - 콘텐츠 데이터는 Inspector에서 조절 가능하지만 아직 별도 ScriptableObject/CSV 파이프라인은 아니다.
 - 스킬, 장비, 인벤토리, 저장/로드, 성장 시스템은 아직 없다.
-- 전투 AI는 가장 가까운 적을 찾아 기본 공격만 수행한다.
+- 전투 AI는 가장 가까운 적을 찾아 월드 좌표로 접근 후 기본 공격만 수행한다.
 - Stage 밸런스는 테스트용 수치다.
 
 ## 다음 작업 제안
