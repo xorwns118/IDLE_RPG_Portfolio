@@ -40,6 +40,7 @@ namespace IdleRPG.Domain.Actors
         public float CurrentHp { get; private set; }
         public ActorState State => StateMachine.CurrentState;
         public bool IsDead => CurrentHp <= 0f || State == ActorState.Dead;
+        public bool IsInCombat { get; private set; }
 
         public event Action<ActorModel, float, float> HealthChanged;
         public event Action<ActorModel, ActorState, ActorState> StateChanged;
@@ -64,6 +65,19 @@ namespace IdleRPG.Domain.Actors
         public void SetSkillLoadout(SkillLoadout _Loadout)
         {
             SkillLoadoutValue = _Loadout ?? new SkillLoadout();
+        }
+
+        public void EnterCombat()
+        {
+            if (IsDead)
+                return;
+
+            IsInCombat = true;
+        }
+
+        public void ExitCombat()
+        {
+            IsInCombat = false;
         }
 
         public void ApplyStatModifier(StatModifier _Modifier, bool _KeepHealthPercent = true)
@@ -106,6 +120,7 @@ namespace IdleRPG.Domain.Actors
         public void RestoreFull()
         {
             DeathRaised = false;
+            IsInCombat = false;
             CurrentHp = Stats.MaxHp;
             SkillLoadoutValue.ResetCooldowns();
             StateMachine.Reset();
@@ -130,12 +145,14 @@ namespace IdleRPG.Domain.Actors
             if (IsDead)
                 return DamageResult.None;
 
+            EnterCombat();
             DamageResult result = CombatMath.CalculateBasicAttack(_AttackerStats, Stats, _CriticalRoll);
             CurrentHp = Math.Max(0f, CurrentHp - result.FinalDamage);
             HealthChanged?.Invoke(this, CurrentHp, Stats.MaxHp);
 
             if (CurrentHp <= 0f)
             {
+                ExitCombat();
                 StateMachine.ForceState(ActorState.Dead);
 
                 if (!DeathRaised)

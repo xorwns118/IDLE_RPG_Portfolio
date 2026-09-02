@@ -18,10 +18,12 @@ namespace IdleRPG.Runtime.Actors
         public CombatActor CurrentTarget { get; private set; }
         public ActorTeam Team => Model != null ? Model.Team : ActorTeam.Monster;
         public bool IsAlive => Model != null && !Model.IsDead;
+        public bool IsInCombat => Model != null && Model.IsInCombat;
         public int SortingOrder => ActorSpriteRenderer != null ? ActorSpriteRenderer.sortingOrder : 0;
 
         public event Action<CombatActor> Died;
         public event Action<CombatActor, CombatActor, DamageResult> DamageTaken;
+        public event Action<CombatActor, CombatActor, SkillExecutionResult> SkillUsed;
 
         public void Initialize(ActorModel _Model, Sprite _Sprite, Color _Color)
         {
@@ -63,6 +65,8 @@ namespace IdleRPG.Runtime.Actors
             if (!IsAlive || _Attacker == null || _Attacker.Model == null)
                 return DamageResult.None;
 
+            _Attacker.Model.EnterCombat();
+            Model.EnterCombat();
             DamageResult result = Model.ReceiveBasicAttack(_Attacker.Model.Stats, _CriticalRoll);
             DamageTaken?.Invoke(this, _Attacker, result);
             return result;
@@ -73,9 +77,19 @@ namespace IdleRPG.Runtime.Actors
             if (!IsAlive || _Attacker == null || _Attacker.Model == null)
                 return DamageResult.None;
 
+            _Attacker.Model.EnterCombat();
+            Model.EnterCombat();
             DamageResult result = Model.ReceiveSkillAttack(_Attacker.Model.Stats, _PowerMultiplier, _CriticalRoll);
             DamageTaken?.Invoke(this, _Attacker, result);
             return result;
+        }
+
+        public void NotifySkillUsed(CombatActor _Target, SkillExecutionResult _Result)
+        {
+            if (!_Result.Succeeded)
+                return;
+
+            SkillUsed?.Invoke(this, _Target, _Result);
         }
 
         public void Face(Vector3 _Point)

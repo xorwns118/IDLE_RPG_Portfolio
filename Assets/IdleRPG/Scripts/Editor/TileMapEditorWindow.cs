@@ -258,6 +258,7 @@ namespace IdleRPG.Editor
         {
             bool isPlayerStart = SelectedCell == _Settings.PlayerStartCell;
             bool isMonsterSpawn = _Settings.IsMonsterSpawnCell(SelectedCell);
+            bool canUseMonsterSpawn = _Settings.CanUseMonsterSpawnCell(SelectedCell);
             bool isReservedCell = isPlayerStart || isMonsterSpawn;
 
             EditorGUILayout.LabelField("Selected Cell Tools", EditorStyles.boldLabel);
@@ -268,12 +269,15 @@ namespace IdleRPG.Editor
             if (GUILayout.Button("Set Player Start"))
                 ApplyChange("Set Player Start Cell", _TileMapSettings => _TileMapSettings.PlayerStartCell = SelectedCell);
 
-            if (GUILayout.Button("Set Primary Monster Spawn"))
-                ApplyChange("Set Primary Monster Spawn Cell", _TileMapSettings => _TileMapSettings.SetPrimaryMonsterSpawnCell(SelectedCell));
+            using (new EditorGUI.DisabledScope(!canUseMonsterSpawn))
+            {
+                if (GUILayout.Button("Set Primary Monster Spawn"))
+                    ApplyChange("Set Primary Monster Spawn Cell", _TileMapSettings => _TileMapSettings.SetPrimaryMonsterSpawnCell(SelectedCell));
+            }
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.BeginHorizontal();
-            using (new EditorGUI.DisabledScope(isMonsterSpawn))
+            using (new EditorGUI.DisabledScope(isMonsterSpawn || !canUseMonsterSpawn))
             {
                 if (GUILayout.Button("Add Monster Spawn"))
                     ApplyChange("Add Monster Spawn Cell", _TileMapSettings => _TileMapSettings.AddMonsterSpawnCell(SelectedCell));
@@ -305,8 +309,11 @@ namespace IdleRPG.Editor
                 ApplyChange("Clear Tile Cell", _TileMapSettings => _TileMapSettings.SetCell(SelectedCell, TileKind.Walkable, _TileMapSettings.DefaultVisualKind));
             EditorGUILayout.EndHorizontal();
 
-            if (isReservedCell)
-                EditorGUILayout.HelpBox("Player Start and Monster Spawn cells always stay walkable.", MessageType.Info);
+            if (isPlayerStart)
+                EditorGUILayout.HelpBox("Player Start cells stay walkable.", MessageType.Info);
+
+            if (!canUseMonsterSpawn)
+                EditorGUILayout.HelpBox("Monster Spawn cells can only be placed on walkable, non-player-start cells.", MessageType.Info);
 
             EditorGUILayout.Space(10f);
         }

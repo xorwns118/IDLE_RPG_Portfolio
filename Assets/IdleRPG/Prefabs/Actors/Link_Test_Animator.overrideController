@@ -6,7 +6,7 @@ AnimatorOverrideController:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: Hero_Base_Animator
+  m_Name: Link_Test_Animator
   m_Controller: {fileID: 9100000, guid: 79471071b9c5b7948a1842349b86b636, type: 2}
   m_Clips:
   - m_OriginalClip: {fileID: 7400000, guid: 624666977022de546932cda60b9c84a2, type: 2}

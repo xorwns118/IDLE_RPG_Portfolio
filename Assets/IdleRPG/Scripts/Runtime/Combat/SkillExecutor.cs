@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using IdleRPG.Domain;
 using IdleRPG.Domain.Actors;
 using IdleRPG.Domain.Combat;
@@ -16,6 +17,18 @@ namespace IdleRPG.Runtime.Combat
             float _CriticalRoll,
             out SkillExecutionResult _Result)
         {
+            return TryExecuteBestSkill(_Caster, _Target, _Distance, _CriticalRoll, null, 0f, out _Result);
+        }
+
+        public bool TryExecuteBestSkill(
+            CombatActor _Caster,
+            CombatActor _Target,
+            float _Distance,
+            float _CriticalRoll,
+            SkillReadinessGate _ReadinessGate,
+            float _ReadyDelaySeconds,
+            out SkillExecutionResult _Result)
+        {
             _Result = SkillExecutionResult.Failed(string.Empty);
             if (_Caster == null || _Caster.Model == null)
                 return false;
@@ -24,15 +37,14 @@ namespace IdleRPG.Runtime.Combat
             if (loadout == null || !loadout.HasAnySkill)
                 return false;
 
-            SkillRuntime skill = loadout.SelectBestReadySkill(
-                _Caster.Model,
-                _Target != null ? _Target.Model : null,
-                _Distance,
-                this);
+            SkillRuntime skill = SelectBestReadySkill(loadout, _Caster, _Target, _Distance, _ReadinessGate, _ReadyDelaySeconds);
             if (skill == null)
                 return false;
 
             _Result = Execute(skill, _Caster, _Target, _Distance, _CriticalRoll);
+            if (_Result.Succeeded && _ReadinessGate != null)
+                _ReadinessGate.MarkSkillUsed(skill);
+
             return _Result.Succeeded;
         }
 
@@ -44,10 +56,13 @@ namespace IdleRPG.Runtime.Combat
             if (!_Skill.Definition.HasEffects || _Caster == null || _Caster.IsDead)
                 return false;
 
-            if (_Skill.Definition.TargetType == SkillTargetType.Self)
-                return IsSelfSkillInEngagementRange(_Skill, _Caster, _Target, _Distance);
+            if (!_Caster.IsInCombat)
+                return false;
 
-            if (!IsEnemyTarget(_Caster, _Target))
+            if (_Skill.Definition.TargetType == SkillTargetType.Self)
+                return true;
+
+            if (!IsEnemyTargetInCombat(_Caster, _Target))
                 return false;
 
             return _Distance <= _Skill.Definition.Range;
@@ -126,21 +141,45 @@ namespace IdleRPG.Runtime.Combat
                 return SkillExecutionResult.Failed(_Skill.Definition.Id);
 
             _Skill.StartCooldown();
-            return SkillExecutionResult.Success(_Skill.Definition, appliedEffectCount, lastDamage);
+            SkillExecutionResult result = SkillExecutionResult.Success(_Skill.Definition, appliedEffectCount, lastDamage);
+            _Caster.NotifySkillUsed(_Target, result);
+            return result;
         }
 
-        private static bool IsSelfSkillInEngagementRange(SkillRuntime _Skill, ActorModel _Caster, ActorModel _Target, float _Distance)
+        private static bool IsEnemyTargetInCombat(ActorModel _Caster, ActorModel _Target)
         {
-            if (_Target == null)
-                return true;
-
-            float range = Mathf.Max(_Skill.Definition.Range, _Caster.Stats.AttackRange);
-            return _Distance <= range;
+            return _Target != null && !_Target.IsDead && _Target.IsInCombat && _Target.Team != _Caster.Team;
         }
 
-        private static bool IsEnemyTarget(ActorModel _Caster, ActorModel _Target)
+        private SkillRuntime SelectBestReadySkill(
+            SkillLoadout _Loadout,
+            CombatActor _Caster,
+            CombatActor _Target,
+            float _Distance,
+            SkillReadinessGate _ReadinessGate,
+            float _ReadyDelaySeconds)
         {
-            return _Target != null && !_Target.IsDead && _Target.Team != _Caster.Team;
+            SkillRuntime bestSkill = null;
+            int bestPriority = int.MinValue;
+            ActorModel targetModel = _Target != null ? _Target.Model : null;
+
+            for (int i = 0; i < SkillLoadout.MaxSlots; i++)
+            {
+                SkillRuntime skill = _Loadout.GetSlot(i);
+                if (skill == null || !CanExecute(skill, _Caster.Model, targetModel, _Distance))
+                    continue;
+
+                if (_ReadinessGate != null && !_ReadinessGate.CanUseSkill(skill, _ReadyDelaySeconds))
+                    continue;
+
+                if (bestSkill == null || skill.Definition.Priority > bestPriority)
+                {
+                    bestSkill = skill;
+                    bestPriority = skill.Definition.Priority;
+                }
+            }
+
+            return bestSkill;
         }
 
         private static ActorModel ResolveEffectTarget(SkillTargetType _TargetType, ActorModel _Caster, ActorModel _Target)
@@ -184,6 +223,92 @@ namespace IdleRPG.Runtime.Combat
 
             DamageResult damage = _Target.TakeSkillAttack(_Caster, _Effect.PowerMultiplier, _CriticalRoll);
             return SkillEffectResult.AppliedDamage(damage);
+        }
+    }
+
+    public sealed class SkillReadinessGate
+    {
+        private readonly Dictionary<SkillRuntime, float> ReadyDelayTimers = new Dictionary<SkillRuntime, float>();
+        private readonly List<SkillRuntime> ReadyDelaySkills = new List<SkillRuntime>();
+
+        public void Clear()
+        {
+            ReadyDelayTimers.Clear();
+        }
+
+        public void Clear(SkillLoadout _Loadout)
+        {
+            if (_Loadout == null)
+                return;
+
+            for (int i = 0; i < SkillLoadout.MaxSlots; i++)
+            {
+                SkillRuntime skill = _Loadout.GetSlot(i);
+                if (skill != null)
+                    ReadyDelayTimers.Remove(skill);
+            }
+        }
+
+        public bool CanUseSkill(SkillRuntime _Skill, float _ReadyDelaySeconds)
+        {
+            if (_Skill == null)
+                return false;
+
+            if (!_Skill.IsReady)
+            {
+                ReadyDelayTimers.Remove(_Skill);
+                return false;
+            }
+
+            float readyDelaySeconds = Mathf.Max(0f, _ReadyDelaySeconds);
+            if (readyDelaySeconds <= 0f)
+                return true;
+
+            if (!ReadyDelayTimers.TryGetValue(_Skill, out float remainingSeconds))
+            {
+                ReadyDelayTimers[_Skill] = readyDelaySeconds;
+                return false;
+            }
+
+            return remainingSeconds <= 0f;
+        }
+
+        public void MarkSkillUsed(SkillRuntime _Skill)
+        {
+            if (_Skill != null)
+                ReadyDelayTimers.Remove(_Skill);
+        }
+
+        public void Tick(float _DeltaSeconds)
+        {
+            if (ReadyDelayTimers.Count == 0)
+                return;
+
+            float deltaSeconds = Mathf.Max(0f, _DeltaSeconds);
+            ReadyDelaySkills.Clear();
+            foreach (SkillRuntime skill in ReadyDelayTimers.Keys)
+            {
+                ReadyDelaySkills.Add(skill);
+            }
+
+            for (int i = 0; i < ReadyDelaySkills.Count; i++)
+            {
+                SkillRuntime skill = ReadyDelaySkills[i];
+                if (skill == null)
+                    continue;
+
+                if (!skill.IsReady)
+                {
+                    ReadyDelayTimers.Remove(skill);
+                    continue;
+                }
+
+                float remainingSeconds = ReadyDelayTimers[skill] - deltaSeconds;
+                if (remainingSeconds <= 0f)
+                    ReadyDelayTimers[skill] = 0f;
+                else
+                    ReadyDelayTimers[skill] = remainingSeconds;
+            }
         }
     }
 }

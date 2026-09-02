@@ -1,4 +1,5 @@
 using IdleRPG.Domain;
+using IdleRPG.Domain.Skills;
 using IdleRPG.Runtime.Actors;
 using IdleRPG.Runtime.Combat;
 using IdleRPG.Runtime.Configuration;
@@ -31,6 +32,11 @@ namespace IdleRPG.Runtime.Bootstrap
         [HideInInspector, SerializeField] private Text RestartTitleText;
         [HideInInspector, SerializeField] private Text RestartBodyText;
         [HideInInspector, SerializeField] private Button RestartButton;
+
+        private readonly Image[] SkillSlotBackgrounds = new Image[SkillLoadout.MaxSlots];
+        private readonly Image[] SkillCooldownFills = new Image[SkillLoadout.MaxSlots];
+        private readonly Text[] SkillNameTexts = new Text[SkillLoadout.MaxSlots];
+        private readonly Text[] SkillCooldownTexts = new Text[SkillLoadout.MaxSlots];
 
         private Sprite PreviewSprite;
         private Sprite TileSprite;
@@ -416,6 +422,7 @@ namespace IdleRPG.Runtime.Bootstrap
             PlayerHpFill = EnsureUiBar(panel, "Player HP Bar", hudSettings.PlayerHpBarPosition, DesignerSettings.Actors.PlayerColor);
             EnemyHpFill = EnsureUiBar(panel, "Enemy HP Bar", hudSettings.EnemyHpBarPosition, DesignerSettings.Actors.MonsterFallbackColor);
 
+            EnsureSkillPanel(canvasTransform);
             EnsureRestartPanel(canvasTransform);
         }
 
@@ -473,6 +480,101 @@ namespace IdleRPG.Runtime.Bootstrap
             buttonText.text = restartSettings.ButtonText;
 
             SetRestartPanelVisible(false);
+        }
+
+        private void EnsureSkillPanel(Transform _CanvasTransform)
+        {
+            MvpSkillHudSettings skillSettings = DesignerSettings.Hud.SkillUi;
+            if (!skillSettings.Enabled)
+            {
+                RemoveChildIfExists(_CanvasTransform, "Skill Panel");
+                ClearSkillHudReferences();
+                return;
+            }
+
+            RectTransform panel = FindOrCreateRectChild(_CanvasTransform, "Skill Panel");
+            panel.anchorMin = new Vector2(0f, 1f);
+            panel.anchorMax = new Vector2(0f, 1f);
+            panel.pivot = new Vector2(0f, 1f);
+            panel.anchoredPosition = skillSettings.PanelPosition;
+            panel.sizeDelta = skillSettings.PanelSize;
+
+            Image panelImage = GetOrAdd<Image>(panel.gameObject);
+            panelImage.color = skillSettings.PanelColor;
+
+            Text titleText = EnsureText(
+                panel,
+                "Title Text",
+                skillSettings.TitlePosition,
+                skillSettings.TitleSize,
+                skillSettings.TitleFontSize,
+                FontStyle.Bold,
+                TextAnchor.MiddleLeft,
+                DesignerSettings.Hud.TextColor);
+            titleText.text = skillSettings.Title;
+
+            for (int i = 0; i < SkillLoadout.MaxSlots; i++)
+                EnsureSkillSlot(panel, i, skillSettings);
+        }
+
+        private void EnsureSkillSlot(Transform _Panel, int _Index, MvpSkillHudSettings _Settings)
+        {
+            RectTransform slot = FindOrCreateRectChild(_Panel, "Skill Slot " + (_Index + 1));
+            slot.anchorMin = new Vector2(0f, 1f);
+            slot.anchorMax = new Vector2(0f, 1f);
+            slot.pivot = new Vector2(0f, 1f);
+            slot.anchoredPosition = _Settings.SlotStartPosition + _Settings.SlotSpacing * _Index;
+            slot.sizeDelta = _Settings.SlotSize;
+
+            Image background = GetOrAdd<Image>(slot.gameObject);
+            background.color = _Settings.SlotEmptyColor;
+            SkillSlotBackgrounds[_Index] = background;
+
+            RectTransform cooldownFill = FindOrCreateRectChild(slot, "Cooldown Fill");
+            cooldownFill.anchorMin = Vector2.zero;
+            cooldownFill.anchorMax = Vector2.one;
+            cooldownFill.offsetMin = Vector2.zero;
+            cooldownFill.offsetMax = Vector2.zero;
+
+            Image cooldownFillImage = GetOrAdd<Image>(cooldownFill.gameObject);
+            cooldownFillImage.color = _Settings.CooldownFillColor;
+            cooldownFillImage.type = Image.Type.Filled;
+            cooldownFillImage.fillMethod = Image.FillMethod.Horizontal;
+            cooldownFillImage.fillOrigin = 0;
+            cooldownFillImage.fillAmount = 0f;
+            SkillCooldownFills[_Index] = cooldownFillImage;
+
+            Vector2 textSize = new Vector2(Mathf.Max(10f, _Settings.SlotSize.x - 16f), Mathf.Max(18f, _Settings.SlotSize.y - 36f));
+            SkillNameTexts[_Index] = EnsureText(
+                slot,
+                "Skill Name Text",
+                new Vector2(8f, -7f),
+                textSize,
+                _Settings.SkillNameFontSize,
+                FontStyle.Bold,
+                TextAnchor.UpperLeft,
+                _Settings.SkillNameTextColor);
+
+            SkillCooldownTexts[_Index] = EnsureText(
+                slot,
+                "Cooldown Text",
+                new Vector2(8f, -Mathf.Max(28f, _Settings.SlotSize.y - 27f)),
+                new Vector2(Mathf.Max(10f, _Settings.SlotSize.x - 16f), 20f),
+                _Settings.CooldownFontSize,
+                FontStyle.Bold,
+                TextAnchor.MiddleLeft,
+                _Settings.ReadyTextColor);
+        }
+
+        private void ClearSkillHudReferences()
+        {
+            for (int i = 0; i < SkillLoadout.MaxSlots; i++)
+            {
+                SkillSlotBackgrounds[i] = null;
+                SkillCooldownFills[i] = null;
+                SkillNameTexts[i] = null;
+                SkillCooldownTexts[i] = null;
+            }
         }
 
         private Text EnsureText(Transform _Parent, string _Name, MvpTextSlotSettings _Slot, TextAnchor _Alignment, Color _Color)
@@ -585,6 +687,7 @@ namespace IdleRPG.Runtime.Bootstrap
                 LogText.text = hudSettings.PlayPrompt;
                 SetFill(PlayerHpFill, 1f);
                 SetFill(EnemyHpFill, 1f);
+                RefreshSkillHud(null);
                 SetRestartPanelVisible(false);
                 return;
             }
@@ -600,6 +703,7 @@ namespace IdleRPG.Runtime.Bootstrap
             LogText.text = RuntimeStageController.LastLog;
             SetFill(PlayerHpFill, GetHpPercent(RuntimeStageController.Player));
             SetFill(EnemyHpFill, GetHpPercent(RuntimeStageController.ActiveMonster));
+            RefreshSkillHud(RuntimeStageController.Player);
             SetRestartPanelVisible(playerDefeated);
 
             if (playerDefeated && RestartTitleText != null && RestartBodyText != null)
@@ -616,6 +720,69 @@ namespace IdleRPG.Runtime.Bootstrap
 
             RestartButton.onClick.RemoveListener(HandleRestartClicked);
             RestartButton.onClick.AddListener(HandleRestartClicked);
+        }
+
+        private void RefreshSkillHud(CombatActor _Actor)
+        {
+            MvpSkillHudSettings skillSettings = DesignerSettings.Hud.SkillUi;
+            if (!skillSettings.Enabled)
+                return;
+
+            for (int i = 0; i < SkillLoadout.MaxSlots; i++)
+            {
+                SkillRuntime runtimeSkill = ResolveRuntimeSkill(_Actor, i);
+                SkillDefinition skillDefinition = runtimeSkill != null ? runtimeSkill.Definition : ResolvePreviewSkill(i);
+                RefreshSkillSlot(i, runtimeSkill, skillDefinition, skillSettings);
+            }
+        }
+
+        private SkillRuntime ResolveRuntimeSkill(CombatActor _Actor, int _Index)
+        {
+            if (_Actor == null || _Actor.Model == null || _Actor.Model.SkillLoadout == null)
+                return null;
+
+            return _Actor.Model.SkillLoadout.GetSlot(_Index);
+        }
+
+        private SkillDefinition ResolvePreviewSkill(int _Index)
+        {
+            if (GameContent == null)
+                return null;
+
+            var database = GameContent.CreateDatabase();
+            if (database == null || database.Player == null || database.Player.SkillLoadout == null || _Index >= database.Player.SkillLoadout.Count)
+                return null;
+
+            return database.Player.SkillLoadout[_Index];
+        }
+
+        private void RefreshSkillSlot(int _Index, SkillRuntime _RuntimeSkill, SkillDefinition _Definition, MvpSkillHudSettings _Settings)
+        {
+            Image background = SkillSlotBackgrounds[_Index];
+            Image cooldownFill = SkillCooldownFills[_Index];
+            Text nameText = SkillNameTexts[_Index];
+            Text cooldownText = SkillCooldownTexts[_Index];
+            if (background == null || cooldownFill == null || nameText == null || cooldownText == null)
+                return;
+
+            if (_Definition == null)
+            {
+                background.color = _Settings.SlotEmptyColor;
+                nameText.text = _Settings.EmptySlotText;
+                nameText.color = _Settings.EmptyTextColor;
+                cooldownText.text = string.Empty;
+                SetFill(cooldownFill, 0f);
+                return;
+            }
+
+            float remainingCooldown = _RuntimeSkill != null ? _RuntimeSkill.RemainingCooldownSeconds : 0f;
+            bool isReady = remainingCooldown <= 0f;
+            background.color = isReady ? _Settings.SlotReadyColor : _Settings.SlotCooldownColor;
+            nameText.text = _Settings.FormatSlot(_Index + 1, _Definition.DisplayName);
+            nameText.color = _Settings.SkillNameTextColor;
+            cooldownText.text = isReady ? _Settings.ReadyText : _Settings.FormatCooldown(remainingCooldown);
+            cooldownText.color = isReady ? _Settings.ReadyTextColor : _Settings.CooldownTextColor;
+            SetFill(cooldownFill, remainingCooldown / _Definition.CooldownSeconds);
         }
 
         private void HandleRestartClicked()

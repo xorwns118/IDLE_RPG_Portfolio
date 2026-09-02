@@ -62,6 +62,7 @@ namespace IdleRPG.Editor
             Transform spawnPoint = RequireTransform(root, "World/Monster Spawn Point");
             Transform canvas = RequireTransform(root, "MVP HUD Canvas");
             Transform panel = RequireTransform(canvas, "Status Panel");
+            Transform skillPanel = RequireTransform(canvas, "Skill Panel");
             Transform restartPanel = RequireTransform(canvas, "Restart Panel");
 
             RequireStartPoint(playerStartPoint);
@@ -85,6 +86,7 @@ namespace IdleRPG.Editor
             RequireText(panel, "Log Text");
             RequireImage(panel, "Player HP Bar/Fill");
             RequireImage(panel, "Enemy HP Bar/Fill");
+            RequireSkillPanel(skillPanel);
             RequireRestartPanel(restartPanel);
             RequireRuntimeBoot();
 
@@ -151,6 +153,10 @@ namespace IdleRPG.Editor
             Require(animationSettings != null, "Actor View settings need Animation settings.");
             Require(animationSettings.FindPropertyRelative("MirrorSpriteRendererByFacing") != null, "Animation settings need Mirror Sprite Renderer By Facing.");
             Require(!animationSettings.FindPropertyRelative("MirrorSpriteRendererByFacing").boolValue, "Directional animation clips should not also mirror SpriteRenderer by default.");
+            SerializedProperty autoCombatSettings = actorSettings.FindPropertyRelative("AutoCombat");
+            Require(autoCombatSettings != null, "Actor View settings need Auto Combat settings.");
+            Require(autoCombatSettings.FindPropertyRelative("SkillUseDelaySeconds") != null, "Auto Combat settings need Skill Use Delay Seconds.");
+            Require(autoCombatSettings.FindPropertyRelative("SkillReadyDelaySeconds") != null, "Auto Combat settings need Skill Ready Delay Seconds.");
             SerializedProperty targetingSettings = actorSettings.FindPropertyRelative("Targeting");
             Require(targetingSettings != null, "Actor View settings need Targeting settings.");
             Require(targetingSettings.FindPropertyRelative("LimitSearchRange") != null, "Targeting settings need Limit Search Range.");
@@ -166,8 +172,17 @@ namespace IdleRPG.Editor
             SerializedProperty turnCombatSettings = designerSettings.FindPropertyRelative("TurnCombat");
             Require(turnCombatSettings != null, "DesignerSettings needs Turn Combat settings.");
             Require(turnCombatSettings.FindPropertyRelative("UseTileMovement") != null, "Turn Combat settings need Use Tile Movement.");
+            Require(turnCombatSettings.FindPropertyRelative("SkillUseDelaySeconds") != null, "Turn Combat settings need Skill Use Delay Seconds.");
+            Require(turnCombatSettings.FindPropertyRelative("SkillReadyDelaySeconds") != null, "Turn Combat settings need Skill Ready Delay Seconds.");
             Require(turnCombatSettings.FindPropertyRelative("WorldMoveSecondsPerTurn") != null, "Turn Combat settings need World Move Seconds Per Turn.");
-            Require(designerSettings.FindPropertyRelative("Hud") != null, "DesignerSettings needs HUD settings.");
+            SerializedProperty hudSettings = designerSettings.FindPropertyRelative("Hud");
+            Require(hudSettings != null, "DesignerSettings needs HUD settings.");
+            SerializedProperty skillUiSettings = hudSettings.FindPropertyRelative("SkillUi");
+            Require(skillUiSettings != null, "HUD settings need Skill UI settings.");
+            Require(skillUiSettings.FindPropertyRelative("Enabled") != null, "Skill UI settings need Enabled.");
+            Require(skillUiSettings.FindPropertyRelative("CooldownDisplayStepSeconds") != null, "Skill UI settings need Cooldown Display Step Seconds.");
+            Require(skillUiSettings.FindPropertyRelative("PanelPosition") != null, "Skill UI settings need Panel Position.");
+            Require(skillUiSettings.FindPropertyRelative("SlotSize") != null, "Skill UI settings need Slot Size.");
             Require(designerSettings.FindPropertyRelative("RestartPanel") != null, "DesignerSettings needs Restart Panel settings.");
             Require(designerSettings.FindPropertyRelative("Stage") != null, "DesignerSettings needs Stage Runtime settings.");
         }
@@ -206,6 +221,21 @@ namespace IdleRPG.Editor
             RequireText(button, "Text");
         }
 
+        private static void RequireSkillPanel(Transform _SkillPanel)
+        {
+            Require(_SkillPanel.GetComponent<Image>() != null, "Skill Panel needs Image.");
+            RequireText(_SkillPanel, "Title Text");
+
+            for (int i = 1; i <= SkillLoadout.MaxSlots; i++)
+            {
+                Transform slot = RequireTransform(_SkillPanel, "Skill Slot " + i);
+                Require(slot.GetComponent<Image>() != null, "Skill Slot " + i + " needs Image.");
+                RequireImage(slot, "Cooldown Fill");
+                RequireText(slot, "Skill Name Text");
+                RequireText(slot, "Cooldown Text");
+            }
+        }
+
         private static void RequireText(Transform _Parent, string _Path)
         {
             Transform text = RequireTransform(_Parent, _Path);
@@ -239,7 +269,7 @@ namespace IdleRPG.Editor
             Vector2Int[] monsterSpawnCells = tileMap.Settings.GetMonsterSpawnCells();
             for (int i = 0; i < monsterSpawnCells.Length; i++)
             {
-                Require(tileMap.IsWalkable(monsterSpawnCells[i]), "Monster Spawn Cell should stay walkable.");
+                Require(tileMap.Settings.CanUseMonsterSpawnCell(monsterSpawnCells[i]), "Monster Spawn Cell should be a walkable non-player-start cell.");
             }
 
             Require(Mathf.Abs(tileMap.Settings.CellSize.x - tileMap.Settings.CellSize.y) < 0.001f, "Tile Map should use square cells.");
@@ -297,10 +327,21 @@ namespace IdleRPG.Editor
                 stage = runtimeRoot.AddComponent<StageController>();
                 Transform spawnPoint = CreateSmokeChild(runtimeRoot.transform, "Smoke Spawn Point").transform;
                 MvpSceneDesignerSettings designerSettings = MvpSceneDesignerSettings.CreateDefault();
-                designerSettings.World.TileMap.SetCell(new Vector2Int(2, 2), TileKind.Blocked, TileVisualKind.Wall);
-                designerSettings.World.TileMap.AddMonsterSpawnCell(new Vector2Int(6, 3));
                 TileMapLayout tileMap = CreateSmokeChild(runtimeRoot.transform, "Smoke Tile Map").AddComponent<TileMapLayout>();
                 tileMap.Configure(designerSettings.World.TileMap);
+
+                System.Collections.Generic.List<Vector2Int> straightPath = new System.Collections.Generic.List<Vector2Int>();
+                Require(
+                    tileMap.TryGetPathToward(new Vector2Int(1, 2), new Vector2Int(5, 2), 1, straightPath)
+                    && straightPath.Count == 3
+                    && straightPath[0] == new Vector2Int(2, 2)
+                    && straightPath[1] == new Vector2Int(3, 2)
+                    && straightPath[2] == new Vector2Int(4, 2),
+                    "A* tile movement should keep a straight path when no obstacle is blocking it.");
+
+                designerSettings.World.TileMap.SetCell(new Vector2Int(2, 2), TileKind.Blocked, TileVisualKind.Wall);
+                designerSettings.World.TileMap.AddMonsterSpawnCell(new Vector2Int(6, 3));
+                designerSettings.World.TileMap.AddMonsterSpawnCell(new Vector2Int(2, 2));
                 spawnPoint.position = tileMap.CellToActorWorld(tileMap.Settings.GetPrimaryMonsterSpawnCell());
 
                 Vector2Int blockedCell = new Vector2Int(2, 2);
@@ -311,7 +352,8 @@ namespace IdleRPG.Editor
                 Require(tileMap.IsWalkable(nextCell), "Tile movement should choose a walkable next cell.");
                 Require(tileMap.Settings.HasMultipleMonsterSpawnCells, "Tile Map should support multiple Monster Spawn Cells.");
                 Require(tileMap.Settings.IsMonsterSpawnCell(new Vector2Int(6, 3)), "Tile Map did not keep the added Monster Spawn Cell.");
-                Require(!designerSettings.Actors.AutoCombat.UseTileMovement, "Auto combat should use world movement by default.");
+                Require(!tileMap.Settings.IsMonsterSpawnCell(blockedCell), "Blocked Tile Cell should not become a Monster Spawn Cell.");
+                Require(designerSettings.Actors.AutoCombat.UseTileMovement, "Auto combat should use tile movement by default.");
                 Require(!designerSettings.Actors.Targeting.LimitSearchRange, "Target search range should not stop battle startup by default.");
                 Require(!designerSettings.FieldEncounter.Enabled, "Field encounter should be opt-in for the current battle MVP scene.");
                 Require(designerSettings.CombatLoop.Mode == CombatLoopMode.Realtime, "Realtime combat should be the default MVP combat loop.");
@@ -417,8 +459,20 @@ namespace IdleRPG.Editor
             actor.TickStatModifiers(2f);
             Require(actor.ActiveStatModifierCount == 1, "Actor did not remove expired stat modifiers.");
 
+            ActorModel combatActor = new ActorModel(
+                "smoke.combat",
+                "Smoke Combat Actor",
+                ActorTeam.Player,
+                new StatBlock(100f, 10f, 2f, 1f, 1f, 2f, 0.1f, 1.5f));
+            Require(!combatActor.IsInCombat, "Actor should start outside combat.");
+            combatActor.ReceiveBasicAttack(new StatBlock(1f, 10f, 0f, 1f, 1f, 0f, 0f, 1f), 1f);
+            Require(combatActor.IsInCombat, "Actor should enter combat after being hit.");
+            combatActor.RestoreFull();
+            Require(!combatActor.IsInCombat, "RestoreFull should clear combat state.");
+
             actor.ReceiveBasicAttack(new StatBlock(1f, 999f, 0f, 1f, 1f, 0f, 0f, 1f), 1f);
             Require(actor.State == ActorState.Dead, "Actor state machine did not enter Dead state.");
+            Require(!actor.IsInCombat, "Dead actor should leave combat.");
             actor.SetState(ActorState.Move);
             Require(actor.State == ActorState.Dead, "Actor state machine allowed Dead to return to Move.");
 
@@ -463,6 +517,12 @@ namespace IdleRPG.Editor
             SkillExecutor executor = new SkillExecutor();
             ISkillExecutor modelExecutor = executor;
 
+            SkillRuntime preCombatRuntime = new SkillRuntime(damageSkill);
+            SkillExecutionResult preCombatResult = modelExecutor.Execute(preCombatRuntime, caster, target, damageSkill.Range, 1f);
+            Require(!preCombatResult.Succeeded, "Skill should not execute before combat engagement.");
+
+            caster.EnterCombat();
+            target.EnterCombat();
             SkillRuntime damageRuntime = new SkillRuntime(damageSkill);
             float targetHpBefore = target.CurrentHp;
             SkillExecutionResult damageResult = modelExecutor.Execute(damageRuntime, caster, target, damageSkill.Range, 1f);
@@ -479,6 +539,10 @@ namespace IdleRPG.Editor
             Require(caster.Stats.AttackPower > attackBefore, "Buff skill did not increase caster Attack Power.");
             caster.Tick(buffSkill.Effects[0].DurationSeconds + 0.1f);
             Require(Mathf.Approximately(caster.Stats.AttackPower, attackBefore), "Buff skill did not expire.");
+
+            SkillRuntime farBuffRuntime = new SkillRuntime(buffSkill);
+            SkillExecutionResult farBuffResult = modelExecutor.Execute(farBuffRuntime, caster, target, buffSkill.Range + 20f, 1f);
+            Require(farBuffResult.Succeeded, "Self skill should execute without target distance gating while in combat.");
 
             RequireRuntimeSkillEvent(damageSkill);
         }
@@ -517,11 +581,35 @@ namespace IdleRPG.Editor
                     damageEventRaised = _Target == target && _Attacker == caster && _Result.FinalDamage > 0f;
                 };
 
+                bool skillEventRaised = false;
+                caster.SkillUsed += (_Caster, _Target, _Result) =>
+                {
+                    skillEventRaised = _Caster == caster && _Target == target && _Result.Succeeded && _Result.SkillId == _Skill.Id;
+                };
+
                 SkillExecutor executor = new SkillExecutor();
                 Require(
-                    executor.TryExecuteBestSkill(caster, target, 0.5f, 1f, out SkillExecutionResult result) && result.Succeeded,
-                    "Runtime SkillExecutor did not execute the ready skill.");
+                    !executor.TryExecuteBestSkill(caster, target, 0.5f, 1f, out SkillExecutionResult preCombatResult) && !preCombatResult.Succeeded,
+                    "Runtime SkillExecutor should wait until the caster is in combat.");
+
+                target.TakeBasicAttack(caster, 1f);
+                Require(caster.IsInCombat && target.IsInCombat, "Basic attack should put both runtime actors in combat.");
+                damageEventRaised = false;
+                SkillReadinessGate readinessGate = new SkillReadinessGate();
+                Require(
+                    !executor.TryExecuteBestSkill(caster, target, 0.5f, 1f, readinessGate, 1f, out SkillExecutionResult readyDelayResult) && !readyDelayResult.Succeeded,
+                    "Runtime SkillExecutor should wait after a skill becomes ready.");
+                readinessGate.Tick(0.5f);
+                Require(
+                    !executor.TryExecuteBestSkill(caster, target, 0.5f, 1f, readinessGate, 1f, out SkillExecutionResult partialReadyDelayResult)
+                    && !partialReadyDelayResult.Succeeded,
+                    "Runtime SkillExecutor should keep waiting until the ready delay finishes.");
+                readinessGate.Tick(0.5f);
+                Require(
+                    executor.TryExecuteBestSkill(caster, target, 0.5f, 1f, readinessGate, 1f, out SkillExecutionResult result) && result.Succeeded,
+                    "Runtime SkillExecutor did not execute after the ready delay.");
                 Require(damageEventRaised, "Runtime skill damage did not raise DamageTaken.");
+                Require(skillEventRaised, "Runtime skill execution did not raise SkillUsed.");
             }
             finally
             {

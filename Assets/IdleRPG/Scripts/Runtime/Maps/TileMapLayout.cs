@@ -8,6 +8,9 @@ namespace IdleRPG.Runtime.Maps
     [AddComponentMenu("Idle RPG/Tile Map Layout")]
     public sealed class TileMapLayout : MonoBehaviour
     {
+        private const int PathMoveCost = 10;
+        private const int PathTurnCost = 2;
+
         [SerializeField] private MvpTileMapSettings SettingsValue = new MvpTileMapSettings();
 
         public MvpTileMapSettings Settings => SettingsValue;
@@ -131,40 +134,32 @@ namespace IdleRPG.Runtime.Maps
         public Vector2Int GetNextCellToward(Vector2Int _From, Vector2Int _Target, int _StopDistance)
         {
             Vector2Int from = ClampCell(_From);
+            List<Vector2Int> path = new List<Vector2Int>();
+            if (!TryGetPathToward(from, _Target, _StopDistance, path) || path.Count == 0)
+                return from;
+
+            return path[0];
+        }
+
+        public bool TryGetPathToward(Vector2Int _From, Vector2Int _Target, int _StopDistance, List<Vector2Int> _Path)
+        {
+            if (_Path == null)
+                return false;
+
+            _Path.Clear();
+            Vector2Int from = ClampCell(_From);
             Vector2Int target = ClampCell(_Target);
             int stopDistance = Mathf.Max(1, _StopDistance);
             if (GetCellDistance(from, target) <= stopDistance)
-                return from;
+                return true;
 
-            Queue<Vector2Int> queue = new Queue<Vector2Int>();
-            HashSet<Vector2Int> visitedCells = new HashSet<Vector2Int>();
             Dictionary<Vector2Int, Vector2Int> previousCells = new Dictionary<Vector2Int, Vector2Int>();
+            Vector2Int destination = FindPathDestination(from, target, stopDistance, previousCells);
+            if (destination == from)
+                return false;
 
-            queue.Enqueue(from);
-            visitedCells.Add(from);
-
-            while (queue.Count > 0)
-            {
-                Vector2Int current = queue.Dequeue();
-                List<Vector2Int> candidates = BuildStepCandidates(current, target - current);
-
-                foreach (Vector2Int candidate in candidates)
-                {
-                    Vector2Int next = ClampCell(candidate);
-                    if (next == current || visitedCells.Contains(next) || !IsWalkable(next))
-                        continue;
-
-                    visitedCells.Add(next);
-                    previousCells[next] = current;
-
-                    if (GetCellDistance(next, target) <= stopDistance)
-                        return GetFirstStep(from, next, previousCells);
-
-                    queue.Enqueue(next);
-                }
-            }
-
-            return from;
+            BuildPath(from, destination, previousCells, _Path);
+            return _Path.Count > 0;
         }
 
         public int GetActorSortingOrder(Vector3 _WorldPosition, int _FallbackSortingOrder)
@@ -226,28 +221,192 @@ namespace IdleRPG.Runtime.Maps
             return _SpriteSettings != null ? _SpriteSettings.SortingOffset : 0;
         }
 
-        private static List<Vector2Int> BuildStepCandidates(Vector2Int _From, Vector2Int _Delta)
+        private Vector2Int FindPathDestination(
+            Vector2Int _From,
+            Vector2Int _Target,
+            int _StopDistance,
+            Dictionary<Vector2Int, Vector2Int> _PreviousCells)
+        {
+            List<Vector2Int> openCells = new List<Vector2Int> { _From };
+            HashSet<Vector2Int> closedCells = new HashSet<Vector2Int>();
+            Dictionary<Vector2Int, int> movementCosts = new Dictionary<Vector2Int, int>
+            {
+                [_From] = 0
+            };
+            Dictionary<Vector2Int, int> pathScores = new Dictionary<Vector2Int, int>
+            {
+                [_From] = GetPathHeuristic(_From, _Target, _StopDistance)
+            };
+            Dictionary<Vector2Int, Vector2Int> pathDirections = new Dictionary<Vector2Int, Vector2Int>
+            {
+                [_From] = Vector2Int.zero
+            };
+
+            while (openCells.Count > 0)
+            {
+                Vector2Int current = PopBestOpenCell(openCells, pathScores, movementCosts, _Target);
+                if (current != _From && GetCellDistance(current, _Target) <= _StopDistance)
+                    return current;
+
+                closedCells.Add(current);
+                Vector2Int currentDirection = pathDirections.TryGetValue(current, out Vector2Int direction)
+                    ? direction
+                    : Vector2Int.zero;
+                List<Vector2Int> candidates = BuildStepCandidates(current, _Target - current, currentDirection);
+
+                for (int i = 0; i < candidates.Count; i++)
+                {
+                    Vector2Int next = ClampCell(candidates[i]);
+                    if (next == current || closedCells.Contains(next) || !IsWalkable(next))
+                        continue;
+
+                    Vector2Int nextDirection = GetStepDirection(current, next);
+                    int nextMovementCost = movementCosts[current] + PathMoveCost + GetTurnCost(currentDirection, nextDirection);
+                    if (movementCosts.TryGetValue(next, out int existingCost) && nextMovementCost >= existingCost)
+                        continue;
+
+                    _PreviousCells[next] = current;
+                    pathDirections[next] = nextDirection;
+                    movementCosts[next] = nextMovementCost;
+                    pathScores[next] = nextMovementCost + GetPathHeuristic(next, _Target, _StopDistance);
+                    if (!openCells.Contains(next))
+                        openCells.Add(next);
+                }
+            }
+
+            return _From;
+        }
+
+        private Vector2Int PopBestOpenCell(
+            List<Vector2Int> _OpenCells,
+            Dictionary<Vector2Int, int> _PathScores,
+            Dictionary<Vector2Int, int> _MovementCosts,
+            Vector2Int _Target)
+        {
+            int bestIndex = 0;
+            Vector2Int bestCell = _OpenCells[0];
+            int bestScore = GetScore(_PathScores, bestCell);
+            int bestDistance = GetCellDistance(bestCell, _Target);
+            int bestMovementCost = GetScore(_MovementCosts, bestCell);
+
+            for (int i = 1; i < _OpenCells.Count; i++)
+            {
+                Vector2Int candidate = _OpenCells[i];
+                int candidateScore = GetScore(_PathScores, candidate);
+                int candidateDistance = GetCellDistance(candidate, _Target);
+                int candidateMovementCost = GetScore(_MovementCosts, candidate);
+                if (!IsBetterPathCandidate(
+                    candidateScore,
+                    candidateDistance,
+                    candidateMovementCost,
+                    bestScore,
+                    bestDistance,
+                    bestMovementCost))
+                    continue;
+
+                bestIndex = i;
+                bestCell = candidate;
+                bestScore = candidateScore;
+                bestDistance = candidateDistance;
+                bestMovementCost = candidateMovementCost;
+            }
+
+            _OpenCells.RemoveAt(bestIndex);
+            return bestCell;
+        }
+
+        private static bool IsBetterPathCandidate(
+            int _CandidateScore,
+            int _CandidateDistance,
+            int _CandidateMovementCost,
+            int _BestScore,
+            int _BestDistance,
+            int _BestMovementCost)
+        {
+            if (_CandidateScore != _BestScore)
+                return _CandidateScore < _BestScore;
+
+            if (_CandidateDistance != _BestDistance)
+                return _CandidateDistance < _BestDistance;
+
+            return _CandidateMovementCost < _BestMovementCost;
+        }
+
+        private static int GetScore(Dictionary<Vector2Int, int> _Scores, Vector2Int _Cell)
+        {
+            return _Scores.TryGetValue(_Cell, out int score) ? score : int.MaxValue;
+        }
+
+        private int GetPathHeuristic(Vector2Int _Cell, Vector2Int _Target, int _StopDistance)
+        {
+            return Mathf.Max(0, GetCellDistance(_Cell, _Target) - _StopDistance) * PathMoveCost;
+        }
+
+        private static int GetTurnCost(Vector2Int _CurrentDirection, Vector2Int _NextDirection)
+        {
+            if (_CurrentDirection == Vector2Int.zero || _CurrentDirection == _NextDirection)
+                return 0;
+
+            return PathTurnCost;
+        }
+
+        private static Vector2Int GetStepDirection(Vector2Int _From, Vector2Int _To)
+        {
+            Vector2Int delta = _To - _From;
+            return new Vector2Int(Mathf.Clamp(delta.x, -1, 1), Mathf.Clamp(delta.y, -1, 1));
+        }
+
+        private static void BuildPath(
+            Vector2Int _From,
+            Vector2Int _Destination,
+            Dictionary<Vector2Int, Vector2Int> _PreviousCells,
+            List<Vector2Int> _Path)
+        {
+            Vector2Int current = _Destination;
+            while (current != _From)
+            {
+                _Path.Add(current);
+                if (!_PreviousCells.TryGetValue(current, out Vector2Int previous))
+                    break;
+
+                current = previous;
+            }
+
+            _Path.Reverse();
+        }
+
+        private static List<Vector2Int> BuildStepCandidates(
+            Vector2Int _From,
+            Vector2Int _Delta,
+            Vector2Int _CurrentDirection)
         {
             List<Vector2Int> candidates = new List<Vector2Int>(4);
+            if (_CurrentDirection != Vector2Int.zero)
+                AddUniqueCandidate(candidates, _From + _CurrentDirection);
+
+            AddGoalBiasedStepCandidates(candidates, _From, _Delta);
+            return candidates;
+        }
+
+        private static void AddGoalBiasedStepCandidates(List<Vector2Int> _Candidates, Vector2Int _From, Vector2Int _Delta)
+        {
             bool preferHorizontal = Mathf.Abs(_Delta.x) >= Mathf.Abs(_Delta.y);
             if (preferHorizontal)
             {
-                AddHorizontalCandidate(candidates, _From, _Delta.x);
-                AddVerticalCandidate(candidates, _From, _Delta.y);
-                AddVerticalCandidate(candidates, _From, 1);
-                AddVerticalCandidate(candidates, _From, -1);
-                AddHorizontalCandidate(candidates, _From, -_Delta.x);
+                AddHorizontalCandidate(_Candidates, _From, _Delta.x);
+                AddVerticalCandidate(_Candidates, _From, _Delta.y);
+                AddVerticalCandidate(_Candidates, _From, 1);
+                AddVerticalCandidate(_Candidates, _From, -1);
+                AddHorizontalCandidate(_Candidates, _From, -_Delta.x);
             }
             else
             {
-                AddVerticalCandidate(candidates, _From, _Delta.y);
-                AddHorizontalCandidate(candidates, _From, _Delta.x);
-                AddHorizontalCandidate(candidates, _From, 1);
-                AddHorizontalCandidate(candidates, _From, -1);
-                AddVerticalCandidate(candidates, _From, -_Delta.y);
+                AddVerticalCandidate(_Candidates, _From, _Delta.y);
+                AddHorizontalCandidate(_Candidates, _From, _Delta.x);
+                AddHorizontalCandidate(_Candidates, _From, 1);
+                AddHorizontalCandidate(_Candidates, _From, -1);
+                AddVerticalCandidate(_Candidates, _From, -_Delta.y);
             }
-
-            return candidates;
         }
 
         private static void AddHorizontalCandidate(List<Vector2Int> _Candidates, Vector2Int _From, int _Direction)
@@ -272,26 +431,27 @@ namespace IdleRPG.Runtime.Maps
                 _Candidates.Add(_Cell);
         }
 
-        private static Vector2Int GetFirstStep(Vector2Int _From, Vector2Int _Destination, Dictionary<Vector2Int, Vector2Int> _PreviousCells)
-        {
-            Vector2Int current = _Destination;
-            while (_PreviousCells.TryGetValue(current, out Vector2Int previous) && previous != _From)
-            {
-                current = previous;
-            }
-
-            return current;
-        }
-
         private Transform FindOrCreateTileRoot()
         {
             Transform tileRoot = transform.Find("Tiles");
             if (tileRoot != null)
                 return tileRoot;
 
-            tileRoot = new GameObject("Tiles").transform;
-            tileRoot.SetParent(transform, false);
-            return tileRoot;
+            GameObject tileRootObject = new GameObject("Tiles");
+            tileRootObject.transform.SetParent(transform, false);
+            return tileRootObject.transform;
+        }
+
+        private void ClearTileRoot()
+        {
+            Transform tileRoot = transform.Find("Tiles");
+            if (tileRoot == null)
+                return;
+
+            if (Application.isPlaying)
+                Destroy(tileRoot.gameObject);
+            else
+                DestroyImmediate(tileRoot.gameObject);
         }
 
         private static string GetTileName(Vector2Int _Cell)
@@ -312,18 +472,6 @@ namespace IdleRPG.Runtime.Maps
                 else
                     DestroyImmediate(child.gameObject);
             }
-        }
-
-        private void ClearTileRoot()
-        {
-            Transform tileRoot = transform.Find("Tiles");
-            if (tileRoot == null)
-                return;
-
-            if (Application.isPlaying)
-                Destroy(tileRoot.gameObject);
-            else
-                DestroyImmediate(tileRoot.gameObject);
         }
     }
 }

@@ -181,6 +181,7 @@ namespace IdleRPG.Editor
             _Root.transform.localScale = _Settings.PreviewScale;
 
             SpriteRenderer spriteRenderer = _Root.AddComponent<SpriteRenderer>();
+            spriteRenderer.sprite = ResolvePreviewSprite(_Settings);
             spriteRenderer.color = _Settings.WorldColor;
             spriteRenderer.sortingOrder = _Settings.SortingOrder;
 
@@ -215,6 +216,56 @@ namespace IdleRPG.Editor
                 collider.size = _Settings.ColliderSize;
                 collider.offset = _Settings.ColliderOffset;
             }
+        }
+
+        private static Sprite ResolvePreviewSprite(ActorPrefabBuildSettings _Settings)
+        {
+            Sprite sprite = ResolveFirstSpriteFromClip(_Settings.Idle_Right);
+            if (sprite != null)
+                return sprite;
+
+            sprite = ResolveFirstSpriteFromClip(_Settings.Idle_Left);
+            if (sprite != null)
+                return sprite;
+
+            sprite = ResolveFirstSpriteFromClip(_Settings.Walk_Right);
+            if (sprite != null)
+                return sprite;
+
+            return ResolveFirstSpriteFromClip(_Settings.Walk_Left);
+        }
+
+        private static Sprite ResolveFirstSpriteFromClip(AnimationClip _Clip)
+        {
+            if (_Clip == null)
+                return null;
+
+            EditorCurveBinding[] bindings = AnimationUtility.GetObjectReferenceCurveBindings(_Clip);
+            Sprite firstSprite = null;
+            float firstTime = float.MaxValue;
+
+            for (int i = 0; i < bindings.Length; i++)
+            {
+                EditorCurveBinding binding = bindings[i];
+                if (binding.type != typeof(SpriteRenderer) || binding.propertyName != "m_Sprite")
+                    continue;
+
+                ObjectReferenceKeyframe[] keyframes = AnimationUtility.GetObjectReferenceCurve(_Clip, binding);
+                if (keyframes == null)
+                    continue;
+
+                for (int j = 0; j < keyframes.Length; j++)
+                {
+                    ObjectReferenceKeyframe keyframe = keyframes[j];
+                    if (keyframe.value is Sprite sprite && keyframe.time < firstTime)
+                    {
+                        firstSprite = sprite;
+                        firstTime = keyframe.time;
+                    }
+                }
+            }
+
+            return firstSprite;
         }
 
         private static void CreateNameLabel(Transform _Root, string _PreviewDisplayName, int _SortingOrder)

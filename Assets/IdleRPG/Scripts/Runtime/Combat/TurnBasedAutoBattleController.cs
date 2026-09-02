@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using IdleRPG.Domain;
 using IdleRPG.Domain.Combat;
 using IdleRPG.Runtime.Actors;
@@ -18,6 +19,9 @@ namespace IdleRPG.Runtime.Combat
         private float TurnTimer;
         private int TurnCursor = -1;
         private readonly SkillExecutor Skills = new SkillExecutor();
+        private readonly SkillReadinessGate SkillReadiness = new SkillReadinessGate();
+        private readonly Dictionary<CombatActor, float> SkillUseDelayTimers = new Dictionary<CombatActor, float>();
+        private readonly List<CombatActor> SkillUseDelayActors = new List<CombatActor>();
         private bool RuntimeActive;
         private bool IsActing;
 
@@ -39,6 +43,8 @@ namespace IdleRPG.Runtime.Combat
             TurnCursor = Settings.PlayerActsFirst ? -1 : 0;
             ExecutedTurnCount = 0;
             IsActing = false;
+            SkillReadiness.Clear();
+            SkillUseDelayTimers.Clear();
             SetRuntimeActive(_RuntimeActive);
         }
 
@@ -92,6 +98,8 @@ namespace IdleRPG.Runtime.Combat
                 return;
 
             Context.TickActors(Time.deltaTime);
+            SkillReadiness.Tick(Time.deltaTime);
+            TickSkillUseDelays(Time.deltaTime);
             TurnTimer -= Time.deltaTime;
             if (TurnTimer > 0f)
                 return;
@@ -102,8 +110,83 @@ namespace IdleRPG.Runtime.Combat
 
         private bool TryUseSkill(CombatActor _Actor, CombatActor _Target, float _CriticalRoll)
         {
+            if (!_Actor.IsInCombat)
+            {
+                SkillReadiness.Clear(_Actor.Model.SkillLoadout);
+                return false;
+            }
+
+            if (GetSkillUseDelay(_Actor) > 0f)
+                return false;
+
             float distance = Vector2.Distance(_Actor.transform.position, _Target.transform.position);
-            return Skills.TryExecuteBestSkill(_Actor, _Target, distance, _CriticalRoll, out SkillExecutionResult result) && result.Succeeded;
+            if (!Skills.TryExecuteBestSkill(
+                _Actor,
+                _Target,
+                distance,
+                _CriticalRoll,
+                SkillReadiness,
+                Settings.SkillReadyDelaySeconds,
+                out SkillExecutionResult result))
+                return false;
+
+            if (!result.Succeeded)
+                return false;
+
+            SetSkillUseDelay(_Actor, Settings.SkillUseDelaySeconds);
+            return true;
+        }
+
+        private float GetSkillUseDelay(CombatActor _Actor)
+        {
+            if (_Actor == null)
+                return 0f;
+
+            return SkillUseDelayTimers.TryGetValue(_Actor, out float remainingSeconds) ? remainingSeconds : 0f;
+        }
+
+        private void SetSkillUseDelay(CombatActor _Actor, float _DelaySeconds)
+        {
+            if (_Actor == null)
+                return;
+
+            float delaySeconds = Mathf.Max(0f, _DelaySeconds);
+            if (delaySeconds <= 0f)
+            {
+                SkillUseDelayTimers.Remove(_Actor);
+                return;
+            }
+
+            SkillUseDelayTimers[_Actor] = delaySeconds;
+        }
+
+        private void TickSkillUseDelays(float _DeltaSeconds)
+        {
+            if (SkillUseDelayTimers.Count == 0)
+                return;
+
+            float deltaSeconds = Mathf.Max(0f, _DeltaSeconds);
+            SkillUseDelayActors.Clear();
+            foreach (CombatActor actor in SkillUseDelayTimers.Keys)
+            {
+                SkillUseDelayActors.Add(actor);
+            }
+
+            for (int i = 0; i < SkillUseDelayActors.Count; i++)
+            {
+                CombatActor actor = SkillUseDelayActors[i];
+                if (actor == null)
+                {
+                    SkillUseDelayTimers.Remove(actor);
+                    continue;
+                }
+
+                float remainingSeconds = SkillUseDelayTimers[actor] - deltaSeconds;
+                if (remainingSeconds <= 0f)
+                    SkillUseDelayTimers.Remove(actor);
+                else
+                    SkillUseDelayTimers[actor] = remainingSeconds;
+            }
         }
 
         private bool IsInsideAttackRange(CombatActor _Actor, CombatActor _Target)

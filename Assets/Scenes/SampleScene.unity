@@ -209,8 +209,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5f7201a12d95ffc409449d95f23cf332, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 0
@@ -288,8 +288,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5f7201a12d95ffc409449d95f23cf332, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 0
@@ -698,8 +698,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: dc42784cf147c0c48a680349fa168899, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_IgnoreReversedGraphics: 1
   m_BlockingObjects: 0
   m_BlockingMask:
@@ -715,8 +715,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 0cd44c1031e13a943bb63640046fad76, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_UiScaleMode: 1
   m_ReferencePixelsPerUnit: 100
   m_ScaleFactor: 1
@@ -947,8 +947,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4f231c4fb786f3946a6b90b886c48677, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_SendPointerHoverToParent: 1
   m_HorizontalAxis: Horizontal
   m_VerticalAxis: Vertical
@@ -967,8 +967,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 76c392e42b5098c458856cdf6ecaaaa1, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_FirstSelected: {fileID: 0}
   m_sendNavigationEvents: 1
   m_DragThreshold: 10
@@ -1331,8 +1331,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 0.13, g: 0.13, b: 0.15, a: 1}
   m_RaycastTarget: 1
@@ -1989,8 +1989,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 0.05, g: 0.06, b: 0.075, a: 0.86}
   m_RaycastTarget: 1
@@ -2151,8 +2151,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 0.04, g: 0.045, b: 0.055, a: 0.95}
   m_RaycastTarget: 1
@@ -2263,8 +2263,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5f7201a12d95ffc409449d95f23cf332, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 0
@@ -2350,8 +2350,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5f7201a12d95ffc409449d95f23cf332, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 0
@@ -2628,8 +2628,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 0.25, g: 0.7, b: 1, a: 1}
   m_RaycastTarget: 1
@@ -2955,8 +2955,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5f7201a12d95ffc409449d95f23cf332, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 0
@@ -3446,8 +3446,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5f7201a12d95ffc409449d95f23cf332, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 0
@@ -3735,8 +3735,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5f7201a12d95ffc409449d95f23cf332, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 0
@@ -3814,8 +3814,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5f7201a12d95ffc409449d95f23cf332, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 0
@@ -4218,8 +4218,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 8ad9a6e6d5b74d141ab1dfbb0fdc94e9, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   GameContent:
     Player:
       Id: player.hero
@@ -4233,6 +4233,99 @@ MonoBehaviour:
         MoveSpeed: 2.35
         CriticalChance: 0.15
         CriticalMultiplier: 1.5
+      SkillLoadout:
+        Slot1SkillId: skill.hero.power_strike
+        Slot2SkillId: skill.hero.battle_focus
+        Slot3SkillId: 
+        Slot4SkillId: 
+    Skills:
+    - Id: skill.hero.power_strike
+      DisplayName: Power Strike
+      TargetType: 0
+      CooldownSeconds: 2.5
+      Range: 1.25
+      Priority: 20
+      Effects:
+      - Id: damage
+        Kind: 0
+        TargetType: 0
+        PowerMultiplier: 1.75
+        DurationSeconds: 0
+        Modifier:
+          MaxHpAdd: 0
+          AttackPowerAdd: 0
+          DefenseAdd: 0
+          AttackRangeAdd: 0
+          AttackIntervalAdd: 0
+          MoveSpeedAdd: 0
+          CriticalChanceAdd: 0
+          CriticalMultiplierAdd: 0
+          MaxHpMultiplier: 1
+          AttackPowerMultiplier: 1
+          DefenseMultiplier: 1
+          AttackRangeMultiplier: 1
+          AttackIntervalMultiplier: 1
+          MoveSpeedMultiplier: 1
+          CriticalChanceMultiplier: 1
+          CriticalMultiplierMultiplier: 1
+    - Id: skill.hero.battle_focus
+      DisplayName: Battle Focus
+      TargetType: 1
+      CooldownSeconds: 6
+      Range: 1.05
+      Priority: 10
+      Effects:
+      - Id: focus.attack
+        Kind: 1
+        TargetType: 1
+        PowerMultiplier: 0
+        DurationSeconds: 3
+        Modifier:
+          MaxHpAdd: 0
+          AttackPowerAdd: 0
+          DefenseAdd: 0
+          AttackRangeAdd: 0
+          AttackIntervalAdd: 0
+          MoveSpeedAdd: 0
+          CriticalChanceAdd: 0
+          CriticalMultiplierAdd: 0
+          MaxHpMultiplier: 1
+          AttackPowerMultiplier: 1.25
+          DefenseMultiplier: 1
+          AttackRangeMultiplier: 1
+          AttackIntervalMultiplier: 1
+          MoveSpeedMultiplier: 1
+          CriticalChanceMultiplier: 1
+          CriticalMultiplierMultiplier: 1
+    - Id: skill.monster.bite
+      DisplayName: Bite
+      TargetType: 0
+      CooldownSeconds: 3
+      Range: 0.95
+      Priority: 8
+      Effects:
+      - Id: bite.damage
+        Kind: 0
+        TargetType: 0
+        PowerMultiplier: 1.2
+        DurationSeconds: 0
+        Modifier:
+          MaxHpAdd: 0
+          AttackPowerAdd: 0
+          DefenseAdd: 0
+          AttackRangeAdd: 0
+          AttackIntervalAdd: 0
+          MoveSpeedAdd: 0
+          CriticalChanceAdd: 0
+          CriticalMultiplierAdd: 0
+          MaxHpMultiplier: 1
+          AttackPowerMultiplier: 1
+          DefenseMultiplier: 1
+          AttackRangeMultiplier: 1
+          AttackIntervalMultiplier: 1
+          MoveSpeedMultiplier: 1
+          CriticalChanceMultiplier: 1
+          CriticalMultiplierMultiplier: 1
     Monsters:
     - Id: monster.slime
       DisplayName: Slime
@@ -4248,6 +4341,11 @@ MonoBehaviour:
         CriticalMultiplier: 1.25
       GoldReward: 5
       ExpReward: 2
+      SkillLoadout:
+        Slot1SkillId: skill.monster.bite
+        Slot2SkillId: 
+        Slot3SkillId: 
+        Slot4SkillId: 
     - Id: monster.goblin
       DisplayName: Goblin
       WorldColor: {r: 0.95, g: 0.75, b: 0.35, a: 1}
@@ -4262,6 +4360,11 @@ MonoBehaviour:
         CriticalMultiplier: 1.3
       GoldReward: 8
       ExpReward: 3
+      SkillLoadout:
+        Slot1SkillId: skill.monster.bite
+        Slot2SkillId: 
+        Slot3SkillId: 
+        Slot4SkillId: 
     - Id: monster.knight
       DisplayName: Training Knight
       WorldColor: {r: 0.55, g: 0.65, b: 0.85, a: 1}
@@ -4276,6 +4379,11 @@ MonoBehaviour:
         CriticalMultiplier: 1.35
       GoldReward: 12
       ExpReward: 5
+      SkillLoadout:
+        Slot1SkillId: skill.monster.bite
+        Slot2SkillId: 
+        Slot3SkillId: 
+        Slot4SkillId: 
     Stages:
     - StageNumber: 1
       MonsterId: monster.slime
@@ -4312,6 +4420,8 @@ MonoBehaviour:
         Origin: {x: -2.8, y: -1.6, z: 0}
         PlayerStartCell: {x: 1, y: 2}
         MonsterSpawnCell: {x: 6, y: 2}
+        MonsterSpawnCells:
+        - {x: 6, y: 2}
         ActorAnchorOffset: {x: 0, y: 0.22, z: 0}
         PrimaryTileColor: {r: 0.16, g: 0.25, b: 0.25, a: 1}
         AlternateTileColor: {r: 0.12, g: 0.2, b: 0.23, a: 1}
@@ -4399,7 +4509,9 @@ MonoBehaviour:
         Enabled: 1
         InitialAttackDelayMin: 0
         InitialAttackDelayMax: 0.15
-        UseTileMovement: 0
+        UseTileMovement: 1
+        SkillUseDelaySeconds: 1
+        SkillReadyDelaySeconds: 1
         TileArrivalThreshold: 0.03
       Targeting:
         SelectionMode: 0
@@ -4410,8 +4522,11 @@ MonoBehaviour:
       Mode: 0
     Spawn:
       FallbackPosition: {x: 3.3, y: 0, z: 0}
+      SelectionMode: 0
+      SpawnPositions: []
       RepeatedSpawnOffset: {x: 0.35, y: 0, z: 0}
       UseTileSpawnOffset: 1
+      SpawnCells: []
       RepeatedSpawnCellOffset: {x: 0, y: 1}
     SceneFlow:
       LoadConfiguredScenes: 0
@@ -4427,6 +4542,12 @@ MonoBehaviour:
     TurnCombat:
       TurnDelaySeconds: 0.45
       PlayerActsFirst: 1
+      UseTileMovement: 1
+      SkillUseDelaySeconds: 1
+      SkillReadyDelaySeconds: 1
+      WorldMoveSecondsPerTurn: 0.45
+      MoveAnimationDuration: 0.18
+      ArrivalThreshold: 0.03
     Hud:
       Title: Idle RPG MVP
       StageFormat: Stage {0}   Kills {1}/{2}
@@ -4722,8 +4843,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 0.35, g: 0.9, b: 0.55, a: 1}
   m_RaycastTarget: 1
@@ -4798,8 +4919,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4e29b1a8efbd4b44bb3f3716e73f07ff, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Navigation:
     m_Mode: 3
     m_WrapAround: 0
@@ -4842,8 +4963,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 0.25, g: 0.7, b: 1, a: 1}
   m_RaycastTarget: 1
@@ -5197,8 +5318,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5f7201a12d95ffc409449d95f23cf332, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 0
@@ -5604,8 +5725,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 0.13, g: 0.13, b: 0.15, a: 1}
   m_RaycastTarget: 1
@@ -5675,8 +5796,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 824f9cb0f38b4f4aa2f67a3a86f9af2c, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   SettingsValue:
     Enabled: 1
     Columns: 8
@@ -5685,6 +5806,8 @@ MonoBehaviour:
     Origin: {x: -2.8, y: -1.6, z: 0}
     PlayerStartCell: {x: 1, y: 2}
     MonsterSpawnCell: {x: 6, y: 2}
+    MonsterSpawnCells:
+    - {x: 6, y: 2}
     ActorAnchorOffset: {x: 0, y: 0.22, z: 0}
     PrimaryTileColor: {r: 0.16, g: 0.25, b: 0.25, a: 1}
     AlternateTileColor: {r: 0.12, g: 0.2, b: 0.23, a: 1}

@@ -142,6 +142,7 @@ namespace IdleRPG.Runtime.Stages
             {
                 PlayerActor.Died -= HandlePlayerDied;
                 PlayerActor.DamageTaken -= HandleDamageTaken;
+                PlayerActor.SkillUsed -= HandleSkillUsed;
             }
 
             ActorModel model = CreatePlayerModel();
@@ -160,6 +161,7 @@ namespace IdleRPG.Runtime.Stages
             ApplyRealtimeCombatActive(PlayerActor);
             PlayerActor.Died += HandlePlayerDied;
             PlayerActor.DamageTaken += HandleDamageTaken;
+            PlayerActor.SkillUsed += HandleSkillUsed;
         }
 
         private ActorModel CreatePlayerModel()
@@ -196,6 +198,7 @@ namespace IdleRPG.Runtime.Stages
 
             ActiveMonsterActor.Died += HandleMonsterDied;
             ActiveMonsterActor.DamageTaken += HandleDamageTaken;
+            ActiveMonsterActor.SkillUsed += HandleSkillUsed;
             ApplyRealtimeCombatActive(ActiveMonsterActor);
         }
 
@@ -230,6 +233,9 @@ namespace IdleRPG.Runtime.Stages
 
             _Monster.Died -= HandleMonsterDied;
             _Monster.DamageTaken -= HandleDamageTaken;
+            _Monster.SkillUsed -= HandleSkillUsed;
+            ExitCombat(_Monster);
+            ExitCombat(PlayerActor);
 
             int goldReward = ActiveMonsterDefinition.GoldReward;
             int expReward = ActiveMonsterDefinition.ExpReward;
@@ -253,7 +259,10 @@ namespace IdleRPG.Runtime.Stages
             IsPlayerDefeated = true;
             StopAllCoroutines();
             if (ActiveMonsterActor != null)
+            {
                 ActiveMonsterActor.SetTarget(null);
+                ExitCombat(ActiveMonsterActor);
+            }
 
             LastLog = RuntimeSettings.PlayerDefeatedLog;
         }
@@ -268,6 +277,25 @@ namespace IdleRPG.Runtime.Stages
                 _Target.Model.DisplayName,
                 _Result.FinalDamage.ToString("0"),
                 _Result.IsCritical);
+        }
+
+        private void HandleSkillUsed(CombatActor _Caster, CombatActor _Target, SkillExecutionResult _Result)
+        {
+            if (!_Result.Succeeded || _Caster == null || _Caster.Model == null)
+                return;
+
+            if (_Result.LastDamage.FinalDamage > 0f && _Target != null && _Target.Model != null)
+            {
+                LastLog = RuntimeSettings.FormatSkillDamage(
+                    _Caster.Model.DisplayName,
+                    _Result.SkillDisplayName,
+                    _Target.Model.DisplayName,
+                    _Result.LastDamage.FinalDamage.ToString("0"),
+                    _Result.LastDamage.IsCritical);
+                return;
+            }
+
+            LastLog = RuntimeSettings.FormatSkillUsed(_Caster.Model.DisplayName, _Result.SkillDisplayName);
         }
 
         private IEnumerator SpawnAfterDelay(float _DelaySeconds)
@@ -299,6 +327,8 @@ namespace IdleRPG.Runtime.Stages
 
                 actor.Died -= HandleMonsterDied;
                 actor.DamageTaken -= HandleDamageTaken;
+                actor.SkillUsed -= HandleSkillUsed;
+                ExitCombat(actor);
                 actor.SetTarget(null);
                 Context.Unregister(actor);
                 DestroyActorObject(actor.gameObject);
@@ -312,6 +342,8 @@ namespace IdleRPG.Runtime.Stages
 
             PlayerActor.Died -= HandlePlayerDied;
             PlayerActor.DamageTaken -= HandleDamageTaken;
+            PlayerActor.SkillUsed -= HandleSkillUsed;
+            ExitCombat(PlayerActor);
             PlayerActor.SetTarget(null);
 
             if (Context != null)
@@ -319,6 +351,12 @@ namespace IdleRPG.Runtime.Stages
 
             DestroyActorObject(PlayerActor.gameObject);
             PlayerActor = null;
+        }
+
+        private static void ExitCombat(CombatActor _Actor)
+        {
+            if (_Actor != null && _Actor.Model != null)
+                _Actor.Model.ExitCombat();
         }
 
         private static void DestroyActorObject(GameObject _ActorObject)

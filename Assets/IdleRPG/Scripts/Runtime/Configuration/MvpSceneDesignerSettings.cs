@@ -243,12 +243,12 @@ namespace IdleRPG.Runtime.Configuration
             CellSize = GetSafeCellSize();
             PlayerStartCell = ClampCell(PlayerStartCell);
             MonsterSpawnCell = ClampCell(MonsterSpawnCell);
-            NormalizeMonsterSpawnCells();
             TileSortingOrderStep = Mathf.Max(1, TileSortingOrderStep);
             ActorSortingOrderStep = Mathf.Max(1, ActorSortingOrderStep);
             OverlaySortingOffset = Mathf.Max(0, OverlaySortingOffset);
             NormalizeSpritePalette();
             NormalizeCellOverrides();
+            NormalizeMonsterSpawnCells();
         }
 
         public Vector2 GetSafeCellSize()
@@ -387,7 +387,10 @@ namespace IdleRPG.Runtime.Configuration
         public bool IsWalkable(Vector2Int _Cell)
         {
             Vector2Int cell = ClampCell(_Cell);
-            return cell == PlayerStartCell || IsMonsterSpawnCell(cell) || GetTileKind(cell) != TileKind.Blocked;
+            if (cell == PlayerStartCell)
+                return true;
+
+            return GetTileKind(cell) != TileKind.Blocked && GetDefaultTileKind(GetTileVisualKind(cell)) != TileKind.Blocked;
         }
 
         public void SetTileKind(Vector2Int _Cell, TileKind _Kind)
@@ -410,10 +413,14 @@ namespace IdleRPG.Runtime.Configuration
         public void SetCell(Vector2Int _Cell, TileKind _Kind, TileVisualKind _VisualKind)
         {
             Vector2Int cell = ClampCell(_Cell);
-            TileKind kind = cell == PlayerStartCell || IsMonsterSpawnCell(cell) ? TileKind.Walkable : _Kind;
+            bool shouldNormalizeSpawnCells = IsMonsterSpawnCell(cell) || _Kind == TileKind.Blocked;
+            TileKind kind = cell == PlayerStartCell ? TileKind.Walkable : _Kind;
             if (kind == TileKind.Walkable && _VisualKind == DefaultVisualKind)
             {
                 RemoveTileOverride(cell);
+                if (shouldNormalizeSpawnCells)
+                    NormalizeMonsterSpawnCells();
+
                 return;
             }
 
@@ -428,11 +435,16 @@ namespace IdleRPG.Runtime.Configuration
 
                 overrideCell.Kind = kind;
                 overrideCell.VisualKind = _VisualKind;
+                if (shouldNormalizeSpawnCells)
+                    NormalizeMonsterSpawnCells();
+
                 return;
             }
 
             Array.Resize(ref CellOverrides, CellOverrides.Length + 1);
             CellOverrides[CellOverrides.Length - 1] = new MvpTileCellSettings(cell, kind, _VisualKind);
+            if (shouldNormalizeSpawnCells)
+                NormalizeMonsterSpawnCells();
         }
 
         public void RemoveTileOverride(Vector2Int _Cell)
@@ -504,6 +516,9 @@ namespace IdleRPG.Runtime.Configuration
         public void SetPrimaryMonsterSpawnCell(Vector2Int _Cell)
         {
             Vector2Int cell = ClampCell(_Cell);
+            if (!CanUseMonsterSpawnCell(cell))
+                return;
+
             List<Vector2Int> cells = BuildUniqueMonsterSpawnCells();
             cells.Remove(cell);
             cells.Insert(0, cell);
@@ -513,11 +528,22 @@ namespace IdleRPG.Runtime.Configuration
         public void AddMonsterSpawnCell(Vector2Int _Cell)
         {
             Vector2Int cell = ClampCell(_Cell);
+            if (!CanUseMonsterSpawnCell(cell))
+                return;
+
             List<Vector2Int> cells = BuildUniqueMonsterSpawnCells();
             if (!cells.Contains(cell))
                 cells.Add(cell);
 
             ApplyMonsterSpawnCells(cells);
+        }
+
+        public bool CanUseMonsterSpawnCell(Vector2Int _Cell)
+        {
+            Vector2Int cell = ClampCell(_Cell);
+            return cell != PlayerStartCell
+                && GetTileKind(cell) != TileKind.Blocked
+                && GetDefaultTileKind(GetTileVisualKind(cell)) != TileKind.Blocked;
         }
 
         public void RemoveMonsterSpawnCell(Vector2Int _Cell)
@@ -598,6 +624,12 @@ namespace IdleRPG.Runtime.Configuration
                     shouldAssign = true;
                 }
 
+                if (overrideCell.Cell != PlayerStartCell && overrideCell.Kind == TileKind.Walkable && GetDefaultTileKind(overrideCell.VisualKind) == TileKind.Blocked)
+                {
+                    overrideCell.Kind = TileKind.Blocked;
+                    shouldAssign = true;
+                }
+
                 if ((overrideCell.Kind == TileKind.Walkable && overrideCell.VisualKind == DefaultVisualKind) || seenCells.Contains(overrideCell.Cell))
                 {
                     shouldAssign = true;
@@ -614,8 +646,19 @@ namespace IdleRPG.Runtime.Configuration
 
         private void NormalizeMonsterSpawnCells()
         {
-            List<Vector2Int> cells = BuildUniqueMonsterSpawnCells();
-            ApplyMonsterSpawnCells(cells);
+            List<Vector2Int> sourceCells = BuildUniqueMonsterSpawnCells();
+            List<Vector2Int> normalizedCells = new List<Vector2Int>(sourceCells.Count);
+            for (int i = 0; i < sourceCells.Count; i++)
+            {
+                Vector2Int cell = ResolveUsableMonsterSpawnCell(sourceCells[i]);
+                if (!normalizedCells.Contains(cell))
+                    normalizedCells.Add(cell);
+            }
+
+            if (normalizedCells.Count == 0)
+                normalizedCells.Add(ResolveUsableMonsterSpawnCell(MonsterSpawnCell));
+
+            ApplyMonsterSpawnCells(normalizedCells);
         }
 
         private List<Vector2Int> BuildUniqueMonsterSpawnCells()
@@ -645,7 +688,7 @@ namespace IdleRPG.Runtime.Configuration
         private void ApplyMonsterSpawnCells(List<Vector2Int> _Cells)
         {
             if (_Cells == null || _Cells.Count == 0)
-                _Cells = new List<Vector2Int> { ClampCell(MonsterSpawnCell) };
+                _Cells = new List<Vector2Int> { ResolveUsableMonsterSpawnCell(MonsterSpawnCell) };
 
             MonsterSpawnCell = ClampCell(_Cells[0]);
             bool shouldAssign = MonsterSpawnCells == null || MonsterSpawnCells.Length != _Cells.Count;
@@ -663,6 +706,29 @@ namespace IdleRPG.Runtime.Configuration
 
             if (shouldAssign)
                 MonsterSpawnCells = _Cells.ToArray();
+        }
+
+        private Vector2Int ResolveUsableMonsterSpawnCell(Vector2Int _Cell)
+        {
+            Vector2Int cell = ClampCell(_Cell);
+            if (CanUseMonsterSpawnCell(cell))
+                return cell;
+
+            int maxDistance = Columns + Rows;
+            for (int distance = 0; distance <= maxDistance; distance++)
+            {
+                for (int y = 0; y < Rows; y++)
+                {
+                    for (int x = 0; x < Columns; x++)
+                    {
+                        Vector2Int candidate = new Vector2Int(x, y);
+                        if (GetCellDistance(cell, candidate) == distance && CanUseMonsterSpawnCell(candidate))
+                            return candidate;
+                    }
+                }
+            }
+
+            return cell;
         }
 
         private MvpTileCellSettings FindCellOverride(Vector2Int _Cell)
@@ -887,8 +953,12 @@ namespace IdleRPG.Runtime.Configuration
 
         [Min(0f)] public float InitialAttackDelayMin = 0f;
         [Min(0f)] public float InitialAttackDelayMax = 0.15f;
-        [Tooltip("Off by default. Enable only when actors should step through tile cells during combat.")]
-        public bool UseTileMovement = false;
+        [Tooltip("When a Tile Map Layout exists, actors use tile path steps so blocked cells are avoided.")]
+        public bool UseTileMovement = true;
+        [Tooltip("Shared delay after any skill succeeds. Prevents several ready skills from firing in the same moment.")]
+        [Min(0f)] public float SkillUseDelaySeconds = 1f;
+        [Tooltip("Delay after a skill becomes ready before auto combat may cast it. Keeps Ready visible before the skill fires.")]
+        [Min(0f)] public float SkillReadyDelaySeconds = 1f;
         [Tooltip("Distance used to snap movement to its destination.")]
         [Min(0.001f)] public float TileArrivalThreshold = 0.03f;
 
@@ -901,6 +971,8 @@ namespace IdleRPG.Runtime.Configuration
         {
             InitialAttackDelayMin = Mathf.Max(0f, InitialAttackDelayMin);
             InitialAttackDelayMax = Mathf.Max(InitialAttackDelayMin, InitialAttackDelayMax);
+            SkillUseDelaySeconds = Mathf.Max(0f, SkillUseDelaySeconds);
+            SkillReadyDelaySeconds = Mathf.Max(0f, SkillReadyDelaySeconds);
             TileArrivalThreshold = Mathf.Max(0.001f, TileArrivalThreshold);
         }
     }
@@ -959,6 +1031,10 @@ namespace IdleRPG.Runtime.Configuration
         public bool PlayerActsFirst = true;
         [Tooltip("Use tile cells for turn movement and attack range when a Tile Map Layout exists.")]
         public bool UseTileMovement = true;
+        [Tooltip("Shared delay after any skill succeeds. Turn-based mode checks this before selecting another skill for the same actor.")]
+        [Min(0f)] public float SkillUseDelaySeconds = 1f;
+        [Tooltip("Delay after a skill becomes ready before turn-based auto combat may cast it.")]
+        [Min(0f)] public float SkillReadyDelaySeconds = 1f;
         [Tooltip("Seconds used as the movement budget in non-tile turn combat.")]
         [Min(0.01f)] public float WorldMoveSecondsPerTurn = 0.45f;
         [Tooltip("Visual duration for one turn movement action.")]
@@ -969,6 +1045,8 @@ namespace IdleRPG.Runtime.Configuration
         public void EnsureDefaults()
         {
             TurnDelaySeconds = Mathf.Max(0.01f, TurnDelaySeconds);
+            SkillUseDelaySeconds = Mathf.Max(0f, SkillUseDelaySeconds);
+            SkillReadyDelaySeconds = Mathf.Max(0f, SkillReadyDelaySeconds);
             WorldMoveSecondsPerTurn = Mathf.Max(0.01f, WorldMoveSecondsPerTurn);
             MoveAnimationDuration = Mathf.Max(0f, MoveAnimationDuration);
             ArrivalThreshold = Mathf.Max(0.001f, ArrivalThreshold);
@@ -1042,6 +1120,9 @@ namespace IdleRPG.Runtime.Configuration
         public string PreviewEnemyText = "Spawn ready";
         public string PlayPrompt = "Press Play to run the MVP combat loop.";
 
+        [Header("Skill UI")]
+        public MvpSkillHudSettings SkillUi = new MvpSkillHudSettings();
+
         public Vector2 ReferenceResolution = new Vector2(1280f, 720f);
         [Range(0f, 1f)] public float MatchWidthOrHeight = 0.5f;
         public Vector2 StatusPanelPosition = new Vector2(18f, -18f);
@@ -1062,12 +1143,14 @@ namespace IdleRPG.Runtime.Configuration
 
         public void EnsureDefaults()
         {
+            if (SkillUi == null) SkillUi = new MvpSkillHudSettings();
             if (TitleText == null) TitleText = new MvpTextSlotSettings(new Vector2(18f, -15f), new Vector2(430f, 26f), 18, FontStyle.Bold);
             if (StageText == null) StageText = new MvpTextSlotSettings(new Vector2(18f, -48f), new Vector2(430f, 24f), 15, FontStyle.Bold);
             if (ResourceText == null) ResourceText = new MvpTextSlotSettings(new Vector2(18f, -74f), new Vector2(430f, 24f), 14, FontStyle.Normal);
             if (PlayerText == null) PlayerText = new MvpTextSlotSettings(new Vector2(18f, -106f), new Vector2(430f, 22f), 14, FontStyle.Normal);
             if (EnemyText == null) EnemyText = new MvpTextSlotSettings(new Vector2(18f, -145f), new Vector2(430f, 22f), 14, FontStyle.Normal);
             if (LogText == null) LogText = new MvpTextSlotSettings(new Vector2(18f, -181f), new Vector2(430f, 24f), 13, FontStyle.Italic);
+            SkillUi.EnsureDefaults();
         }
 
         public string FormatStage(int _StageNumber, int _Kills, int _RequiredKills)
@@ -1093,6 +1176,86 @@ namespace IdleRPG.Runtime.Configuration
         public string FormatActor(string _Name, string _CurrentHp, string _MaxHp, object _State)
         {
             return MvpTextFormatter.Format(ActorFormat, _Name, _CurrentHp, _MaxHp, _State);
+        }
+    }
+
+    [Serializable]
+    public sealed class MvpSkillHudSettings
+    {
+        [Tooltip("Create the visible skill panel in the generated MVP HUD.")]
+        public bool Enabled = true;
+
+        [Tooltip("Title text shown above the skill slots.")]
+        public string Title = "Skills";
+
+        [Tooltip("Text used for a skill slot with no assigned skill.")]
+        public string EmptySlotText = "-";
+
+        [Tooltip("Text shown when a skill can be used.")]
+        public string ReadyText = "Ready";
+
+        [Tooltip("Cooldown text format. {0} is the remaining cooldown in seconds.")]
+        public string CooldownFormat = "{0:0.0}s";
+
+        [Tooltip("Positive cooldown values are rounded up to this display step, avoiding 0.0s before Ready.")]
+        [Min(0.01f)] public float CooldownDisplayStepSeconds = 0.1f;
+
+        [Tooltip("Skill slot name format. {0} is slot number, {1} is skill display name.")]
+        public string SlotFormat = "{0}. {1}";
+
+        [Header("Panel Layout")]
+        public Vector2 PanelPosition = new Vector2(18f, -248f);
+        public Vector2 PanelSize = new Vector2(470f, 142f);
+        public Color PanelColor = new Color(0.05f, 0.055f, 0.07f, 0.78f);
+        public Vector2 TitlePosition = new Vector2(14f, -10f);
+        public Vector2 TitleSize = new Vector2(442f, 22f);
+        [Min(1)] public int TitleFontSize = 14;
+
+        [Header("Slot Layout")]
+        public Vector2 SlotStartPosition = new Vector2(14f, -40f);
+        public Vector2 SlotSize = new Vector2(105f, 84f);
+        public Vector2 SlotSpacing = new Vector2(112f, 0f);
+
+        [Header("Slot Colors")]
+        public Color SlotReadyColor = new Color(0.16f, 0.23f, 0.22f, 0.96f);
+        public Color SlotCooldownColor = new Color(0.11f, 0.12f, 0.15f, 0.96f);
+        public Color SlotEmptyColor = new Color(0.08f, 0.08f, 0.09f, 0.84f);
+        public Color CooldownFillColor = new Color(0.05f, 0.55f, 0.85f, 0.65f);
+
+        [Header("Text Colors")]
+        public Color SkillNameTextColor = Color.white;
+        public Color ReadyTextColor = new Color(0.78f, 1f, 0.86f, 1f);
+        public Color CooldownTextColor = new Color(1f, 0.84f, 0.52f, 1f);
+        public Color EmptyTextColor = new Color(0.55f, 0.58f, 0.62f, 1f);
+        [Min(1)] public int SkillNameFontSize = 12;
+        [Min(1)] public int CooldownFontSize = 12;
+
+        public void EnsureDefaults()
+        {
+            TitleFontSize = Mathf.Max(1, TitleFontSize);
+            SkillNameFontSize = Mathf.Max(1, SkillNameFontSize);
+            CooldownFontSize = Mathf.Max(1, CooldownFontSize);
+            CooldownDisplayStepSeconds = Mathf.Max(0.01f, CooldownDisplayStepSeconds);
+            PanelSize.x = Mathf.Max(1f, PanelSize.x);
+            PanelSize.y = Mathf.Max(1f, PanelSize.y);
+            TitleSize.x = Mathf.Max(1f, TitleSize.x);
+            TitleSize.y = Mathf.Max(1f, TitleSize.y);
+            SlotSize.x = Mathf.Max(1f, SlotSize.x);
+            SlotSize.y = Mathf.Max(1f, SlotSize.y);
+        }
+
+        public string FormatSlot(int _SlotNumber, string _SkillName)
+        {
+            return MvpTextFormatter.Format(SlotFormat, _SlotNumber, _SkillName);
+        }
+
+        public string FormatCooldown(float _RemainingSeconds)
+        {
+            float remainingSeconds = Mathf.Max(0f, _RemainingSeconds);
+            if (remainingSeconds > 0f)
+                remainingSeconds = Mathf.Ceil(remainingSeconds / CooldownDisplayStepSeconds) * CooldownDisplayStepSeconds;
+
+            return MvpTextFormatter.Format(CooldownFormat, remainingSeconds);
         }
     }
 
@@ -1172,6 +1335,13 @@ namespace IdleRPG.Runtime.Configuration
         public string MonsterDefeatedLogFormat = "{0} defeated. +{1} gold, +{2} exp.";
         public string PlayerDefeatedLog = "Player defeated. Restart the stage when ready.";
         public string DamageLogFormat = "{0} -> {1}: {2}{3}";
+
+        [Tooltip("Skill damage log format. {0}=caster, {1}=skill, {2}=target, {3}=damage, {4}=critical suffix.")]
+        public string SkillDamageLogFormat = "{0} used {1} on {2}: {3}{4}";
+
+        [Tooltip("Non-damage skill log format. {0}=caster, {1}=skill.")]
+        public string SkillUsedLogFormat = "{0} used {1}.";
+
         public string CriticalSuffix = " CRIT";
         public string FieldReadyLog = "Field mode ready. Move to an encounter point.";
 
@@ -1203,6 +1373,16 @@ namespace IdleRPG.Runtime.Configuration
         public string FormatDamage(string _Attacker, string _Target, string _Damage, bool _IsCritical)
         {
             return MvpTextFormatter.Format(DamageLogFormat, _Attacker, _Target, _Damage, _IsCritical ? CriticalSuffix : string.Empty);
+        }
+
+        public string FormatSkillDamage(string _Attacker, string _SkillName, string _Target, string _Damage, bool _IsCritical)
+        {
+            return MvpTextFormatter.Format(SkillDamageLogFormat, _Attacker, _SkillName, _Target, _Damage, _IsCritical ? CriticalSuffix : string.Empty);
+        }
+
+        public string FormatSkillUsed(string _ActorName, string _SkillName)
+        {
+            return MvpTextFormatter.Format(SkillUsedLogFormat, _ActorName, _SkillName);
         }
 
         public void EnsureDefaults()
