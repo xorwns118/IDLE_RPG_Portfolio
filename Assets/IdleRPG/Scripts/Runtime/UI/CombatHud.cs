@@ -22,9 +22,7 @@ namespace IdleRPG.Runtime.UI
         private void OnGUI()
         {
             if (Stage == null || Context == null)
-            {
                 return;
-            }
 
             EnsureStyles();
 
@@ -44,9 +42,7 @@ namespace IdleRPG.Runtime.UI
         private static string FormatActor(CombatActor _Actor)
         {
             if (_Actor == null || _Actor.Model == null)
-            {
                 return "-";
-            }
 
             return _Actor.Model.DisplayName + " "
                 + _Actor.Model.CurrentHp.ToString("0") + "/" + _Actor.Model.Stats.MaxHp.ToString("0")
@@ -56,9 +52,7 @@ namespace IdleRPG.Runtime.UI
         private void EnsureStyles()
         {
             if (BoxStyle != null)
-            {
                 return;
-            }
 
             BoxStyle = new GUIStyle(GUI.skin.box);
             BoxStyle.normal.background = Texture2D.grayTexture;

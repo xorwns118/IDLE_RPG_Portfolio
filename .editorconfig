@@ -1,6 +1,8 @@
 root = true
 
 [Assets/**/*.cs]
+csharp_prefer_braces = when_multiline:warning
+
 dotnet_naming_rule.types_should_be_pascal_case.severity = warning
 dotnet_naming_rule.types_should_be_pascal_case.symbols = types
 dotnet_naming_rule.types_should_be_pascal_case.style = pascal_case

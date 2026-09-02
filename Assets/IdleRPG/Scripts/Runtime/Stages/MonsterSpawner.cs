@@ -62,16 +62,42 @@ namespace IdleRPG.Runtime.Stages
 
         private Vector3 ResolveSpawnPosition()
         {
-            Vector3 basePosition = SpawnPoint != null ? SpawnPoint.position : Settings.FallbackPosition;
             if (TileMap != null && TileMap.IsEnabled && Settings.UseTileSpawnOffset)
             {
-                Vector2Int baseCell = TileMap.WorldToCell(basePosition);
-                Vector2Int spawnCell = TileMap.ClampCell(baseCell + Settings.RepeatedSpawnCellOffset * SpawnCount);
-                spawnCell = TileMap.GetNearestWalkableCell(spawnCell);
+                Vector2Int spawnCell = ResolveSpawnCell();
                 return TileMap.CellToActorWorld(spawnCell);
             }
 
+            if (Settings.HasSpawnPositions)
+            {
+                int spawnIndex = Settings.SelectSpawnIndex(SpawnCount, Settings.SpawnPositions.Length);
+                return Settings.SpawnPositions[spawnIndex];
+            }
+
+            Vector3 basePosition = SpawnPoint != null ? SpawnPoint.position : Settings.FallbackPosition;
             return basePosition + Settings.RepeatedSpawnOffset * SpawnCount;
+        }
+
+        private Vector2Int ResolveSpawnCell()
+        {
+            if (Settings.HasSpawnCells)
+            {
+                int spawnIndex = Settings.SelectSpawnIndex(SpawnCount, Settings.SpawnCells.Length);
+                Vector2Int configuredCell = TileMap.ClampCell(Settings.SpawnCells[spawnIndex]);
+                return TileMap.GetNearestWalkableCell(configuredCell);
+            }
+
+            if (TileMap.Settings.HasMultipleMonsterSpawnCells)
+            {
+                int spawnIndex = Settings.SelectSpawnIndex(SpawnCount, TileMap.Settings.MonsterSpawnCellCount);
+                Vector2Int configuredCell = TileMap.Settings.GetMonsterSpawnCell(spawnIndex);
+                return TileMap.GetNearestWalkableCell(configuredCell);
+            }
+
+            Vector3 basePosition = SpawnPoint != null ? SpawnPoint.position : Settings.FallbackPosition;
+            Vector2Int baseCell = TileMap.WorldToCell(basePosition);
+            Vector2Int spawnCell = TileMap.ClampCell(baseCell + Settings.RepeatedSpawnCellOffset * SpawnCount);
+            return TileMap.GetNearestWalkableCell(spawnCell);
         }
     }
 }

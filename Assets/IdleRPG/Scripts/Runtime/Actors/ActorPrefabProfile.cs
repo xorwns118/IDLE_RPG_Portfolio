@@ -71,19 +71,13 @@ namespace IdleRPG.Runtime.Actors
         private void EnsureDefaults()
         {
             if (string.IsNullOrWhiteSpace(IdValue))
-            {
                 IdValue = TeamValue == ActorTeam.Player ? "player.hero" : "monster.base";
-            }
 
             if (string.IsNullOrWhiteSpace(DisplayNameValue))
-            {
                 DisplayNameValue = IdValue;
-            }
 
             if (StatsValue == null)
-            {
                 StatsValue = CreateDefaultStats(TeamValue);
-            }
 
             NormalizeStats(StatsValue);
             GoldRewardValue = Mathf.Max(0, GoldRewardValue);

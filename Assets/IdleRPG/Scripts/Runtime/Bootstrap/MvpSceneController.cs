@@ -1,3 +1,4 @@
+using IdleRPG.Domain;
 using IdleRPG.Runtime.Actors;
 using IdleRPG.Runtime.Combat;
 using IdleRPG.Runtime.Configuration;
@@ -36,6 +37,10 @@ namespace IdleRPG.Runtime.Bootstrap
         private TileMapLayout TileMap;
         private StageController RuntimeStageController;
         private BattleContext RuntimeBattleContext;
+        private StageSceneFlowController RuntimeSceneFlowController;
+        private FieldEncounterController RuntimeFieldEncounterController;
+        private TurnBasedAutoBattleController RuntimeTurnBattleController;
+        private bool BattleRuntimeInitialized;
         private bool RuntimeStarted;
 
         public MvpSceneDesignerSettings DesignerEditableSettings => DesignerSettings;
@@ -85,8 +90,44 @@ namespace IdleRPG.Runtime.Bootstrap
             RuntimeStarted = true;
             RuntimeBattleContext = GetOrAdd<BattleContext>(gameObject);
             RuntimeStageController = GetOrAdd<StageController>(gameObject);
+            RuntimeSceneFlowController = GetOrAdd<StageSceneFlowController>(gameObject);
+            RuntimeSceneFlowController.Initialize(DesignerSettings.SceneFlow);
+            RuntimeSceneFlowController.FlowChanged -= HandleStageFlowChanged;
+            RuntimeSceneFlowController.FlowChanged += HandleStageFlowChanged;
 
-            ActorFactory factory = new ActorFactory(EnsureSprite(), DesignerSettings.Actors);
+            RuntimeBattleContext.SetTileMap(TileMap);
+            RuntimeBattleContext.ConfigureTargeting(DesignerSettings.Actors.Targeting);
+
+            if (ShouldStartBattleRuntime())
+            {
+                int requestedStageNumber = RuntimeSceneFlowController.HasBattleStageRequest
+                    ? RuntimeSceneFlowController.RequestedStageNumber
+                    : 0;
+                InitializeBattleRuntime(requestedStageNumber);
+            }
+            else
+            {
+                RuntimeStageController.ClearRuntime();
+                BattleRuntimeInitialized = false;
+                ConfigureCombatLoopRuntime();
+            }
+
+            RuntimeSceneFlowController.ClearBattleStageRequest();
+            ConfigureFieldEncounterController();
+
+
+            BindRestartButton();
+            RefreshHud();
+        }
+
+        private bool ShouldStartBattleRuntime()
+        {
+            return RuntimeSceneFlowController.CurrentMode == StageFlowMode.Battle || RuntimeSceneFlowController.HasBattleStageRequest;
+        }
+
+        private void InitializeBattleRuntime(int _StartStageNumberOverride)
+        {
+            ActorFactory factory = new ActorFactory(EnsureSprite(), DesignerSettings.Actors, DesignerSettings.CombatLoop.Mode);
             RuntimeStageController.Initialize(new StageController.RuntimeSetup
             {
                 Database = GameContent.CreateDatabase(),
@@ -98,11 +139,98 @@ namespace IdleRPG.Runtime.Bootstrap
                 ActorSettings = DesignerSettings.Actors,
                 PlayerStartPosition = GetPlayerStartPosition(),
                 SpawnSettings = DesignerSettings.Spawn,
-                TileMap = TileMap
+                TileMap = TileMap,
+                StartStageNumberOverride = _StartStageNumberOverride
             });
 
-            BindRestartButton();
-            RefreshHud();
+            BattleRuntimeInitialized = true;
+            ConfigureCombatLoopRuntime();
+        }
+
+        private void ConfigureCombatLoopRuntime()
+        {
+            bool battleLoopActive = IsBattleRuntimeActive();
+            bool realtimeActive = battleLoopActive && DesignerSettings.CombatLoop.Mode == CombatLoopMode.Realtime;
+            bool turnBasedActive = battleLoopActive && DesignerSettings.CombatLoop.Mode == CombatLoopMode.TurnBased;
+
+            if (RuntimeStageController != null)
+                RuntimeStageController.SetRealtimeCombatActive(realtimeActive);
+
+            RuntimeTurnBattleController = GetOrAdd<TurnBasedAutoBattleController>(gameObject);
+            RuntimeTurnBattleController.Initialize(
+                RuntimeBattleContext,
+                DesignerSettings.TurnCombat,
+                turnBasedActive);
+        }
+
+        private bool IsBattleRuntimeActive()
+        {
+            return BattleRuntimeInitialized
+                && RuntimeSceneFlowController != null
+                && RuntimeSceneFlowController.CurrentMode == StageFlowMode.Battle
+                && RuntimeStageController != null
+                && RuntimeStageController.HasActiveStage;
+        }
+
+        private void ConfigureFieldEncounterController()
+        {
+            if (!DesignerSettings.FieldEncounter.Enabled)
+            {
+                if (RuntimeFieldEncounterController != null)
+                    RuntimeFieldEncounterController.SetRuntimeActive(false);
+
+                return;
+            }
+
+            RuntimeFieldEncounterController = GetOrAdd<FieldEncounterController>(gameObject);
+            RuntimeFieldEncounterController.Initialize(
+                DesignerSettings.FieldEncounter,
+                ResolveFieldEncounterPlayer(),
+                MonsterSpawnPoint,
+                RuntimeSceneFlowController);
+            RuntimeFieldEncounterController.SetRuntimeActive(IsFieldRuntimeActive());
+        }
+
+        private bool IsFieldRuntimeActive()
+        {
+            return RuntimeSceneFlowController != null && RuntimeSceneFlowController.CurrentMode == StageFlowMode.Field;
+        }
+
+        private Transform ResolveFieldEncounterPlayer()
+        {
+            if (RuntimeStageController != null && RuntimeStageController.Player != null)
+                return RuntimeStageController.Player.transform;
+
+            return PlayerStartPoint;
+        }
+
+        private void HandleStageFlowChanged(StageFlowMode _Mode, int _StageNumber)
+        {
+            if (!Application.isPlaying || RuntimeStageController == null || DesignerSettings.SceneFlow.LoadConfiguredScenes)
+                return;
+
+            if (_Mode == StageFlowMode.Field)
+            {
+                RuntimeStageController.ClearRuntime();
+                BattleRuntimeInitialized = false;
+                ConfigureCombatLoopRuntime();
+                ConfigureFieldEncounterController();
+                RefreshHud();
+                return;
+            }
+
+            if (_Mode == StageFlowMode.Battle)
+            {
+                if (!BattleRuntimeInitialized || !RuntimeStageController.HasActiveStage)
+                    InitializeBattleRuntime(_StageNumber);
+                else
+                    RuntimeStageController.StartStage(_StageNumber);
+
+                ConfigureCombatLoopRuntime();
+                ConfigureFieldEncounterController();
+                RuntimeSceneFlowController.ClearBattleStageRequest();
+                RefreshHud();
+            }
         }
 
         private Vector3 GetPlayerStartPosition()
@@ -124,8 +252,8 @@ namespace IdleRPG.Runtime.Bootstrap
 
         private void EnsureSceneLayout()
         {
-            EnsureCamera();
             EnsureWorldLayout();
+            EnsureCamera();
             EnsureHudLayout();
             EnsureEventSystem();
             RefreshHud();
@@ -144,10 +272,29 @@ namespace IdleRPG.Runtime.Bootstrap
             }
 
             camera.orthographic = true;
-            camera.orthographicSize = cameraSettings.OrthographicSize;
+            camera.orthographicSize = GetCameraOrthographicSize(camera, cameraSettings);
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = cameraSettings.BackgroundColor;
-            camera.transform.position = cameraSettings.Position;
+            camera.transform.position = GetCameraPosition(cameraSettings);
+        }
+
+        private Vector3 GetCameraPosition(MvpCameraSettings _CameraSettings)
+        {
+            if (_CameraSettings.AutoFitTileMap && TileMap != null && TileMap.IsEnabled)
+            {
+                Bounds mapBounds = TileMap.GetWorldBounds();
+                return new Vector3(mapBounds.center.x, mapBounds.center.y, _CameraSettings.Position.z);
+            }
+
+            return _CameraSettings.Position;
+        }
+
+        private float GetCameraOrthographicSize(Camera _Camera, MvpCameraSettings _CameraSettings)
+        {
+            if (_CameraSettings.AutoFitTileMap && TileMap != null && TileMap.IsEnabled)
+                return _CameraSettings.CalculateTileMapOrthographicSize(TileMap.Settings, _Camera.aspect);
+
+            return _CameraSettings.OrthographicSize;
         }
 
         private void EnsureWorldLayout()
@@ -169,7 +316,7 @@ namespace IdleRPG.Runtime.Bootstrap
                 TileMap.RebuildVisuals(EnsureTileSprite());
 
                 Vector3 playerLocalPosition = world.InverseTransformPoint(TileMap.CellToActorWorld(worldSettings.TileMap.PlayerStartCell));
-                Vector3 monsterLocalPosition = world.InverseTransformPoint(TileMap.CellToActorWorld(worldSettings.TileMap.MonsterSpawnCell));
+                Vector3 monsterLocalPosition = world.InverseTransformPoint(TileMap.CellToActorWorld(worldSettings.TileMap.GetPrimaryMonsterSpawnCell()));
                 PlayerStartPoint = FindOrCreateChild(world, "Player Start Point");
                 ConfigureStartPoint(PlayerStartPoint, playerLocalPosition);
 
@@ -202,6 +349,7 @@ namespace IdleRPG.Runtime.Bootstrap
 
             RemoveChildIfExists(world, "Player Actor");
             RemoveChildIfExists(world, "Monster Actor");
+            RemoveEditModeRuntimeActors();
         }
 
         private void ConfigureStartPoint(Transform _Marker, Vector3 _Position)
@@ -213,6 +361,21 @@ namespace IdleRPG.Runtime.Bootstrap
             RemoveChildIfExists(_Marker, "HP Background");
             RemoveChildIfExists(_Marker, "HP Fill");
             RemoveChildIfExists(_Marker, "Name Label");
+        }
+
+        private void RemoveEditModeRuntimeActors()
+        {
+            if (Application.isPlaying)
+                return;
+
+            CombatActor[] actors = FindObjectsOfType<CombatActor>(true);
+            foreach (CombatActor actor in actors)
+            {
+                if (actor == null || actor.gameObject.scene != gameObject.scene)
+                    continue;
+
+                DestroyImmediate(actor.gameObject);
+            }
         }
 
         private void EnsureHudLayout()
@@ -412,7 +575,7 @@ namespace IdleRPG.Runtime.Bootstrap
                 return;
 
             MvpHudSettings hudSettings = DesignerSettings.Hud;
-            if (RuntimeStageController == null)
+            if (RuntimeStageController == null || !RuntimeStageController.HasActiveStage)
             {
                 int startStage = DesignerSettings.Stage.StartStageNumber;
                 StageText.text = hudSettings.FormatStage(startStage, 0, GameContent.GetRequiredKillsForStage(startStage));

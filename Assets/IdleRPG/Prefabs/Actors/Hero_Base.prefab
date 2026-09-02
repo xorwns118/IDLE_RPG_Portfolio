@@ -233,7 +233,7 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 10
   m_Sprite: {fileID: 0}
-  m_Color: {r: 0.25, g: 0.7, b: 1, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -258,7 +258,7 @@ MonoBehaviour:
   TeamValue: 0
   IdValue: player.hero
   DisplayNameValue: Training Hero
-  WorldColorValue: {r: 0.25, g: 0.7, b: 1, a: 1}
+  WorldColorValue: {r: 1, g: 1, b: 1, a: 1}
   StatsValue:
     MaxHp: 140
     AttackPower: 16
@@ -316,7 +316,7 @@ Animator:
   m_GameObject: {fileID: 1158127569369778944}
   m_Enabled: 1
   m_Avatar: {fileID: 0}
-  m_Controller: {fileID: 0}
+  m_Controller: {fileID: 22100000, guid: d89eb84244d56d644b8c35c81d83c666, type: 2}
   m_CullingMode: 0
   m_UpdateMode: 0
   m_ApplyRootMotion: 0

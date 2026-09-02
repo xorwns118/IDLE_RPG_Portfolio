@@ -34,22 +34,16 @@ namespace IdleRPG.Runtime.UI
         public void SetSortingBase(int _SortingOrder)
         {
             if (BackgroundRenderer != null)
-            {
                 BackgroundRenderer.sortingOrder = _SortingOrder;
-            }
 
             if (FillRenderer != null)
-            {
                 FillRenderer.sortingOrder = _SortingOrder + 1;
-            }
         }
 
         private void Update()
         {
             if (Actor == null || Actor.Model == null || Fill == null)
-            {
                 return;
-            }
 
             float percent = Mathf.Clamp01(Actor.Model.CurrentHp / Actor.Model.Stats.MaxHp);
             Fill.localScale = new Vector3(Settings.Width * percent, Settings.Height, 1f);
@@ -67,18 +61,14 @@ namespace IdleRPG.Runtime.UI
 
             SpriteRenderer renderer = barObject.GetComponent<SpriteRenderer>();
             if (renderer == null)
-            {
                 renderer = barObject.AddComponent<SpriteRenderer>();
-            }
 
             renderer.sprite = _Sprite;
             renderer.color = _Color;
             renderer.sortingOrder = _SortingOrder;
 
             if (_BarName == "HP Background")
-            {
                 BackgroundRenderer = renderer;
-            }
             else if (_BarName == "HP Fill")
             {
                 FillRenderer = renderer;

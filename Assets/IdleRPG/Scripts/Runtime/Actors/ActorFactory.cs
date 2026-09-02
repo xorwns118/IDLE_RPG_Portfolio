@@ -11,6 +11,7 @@ namespace IdleRPG.Runtime.Actors
     {
         private readonly Sprite UnitSprite;
         private readonly MvpActorViewSettings VisualSettings;
+        private readonly CombatLoopMode LoopMode;
 
         public ActorFactory(Sprite _UnitSprite)
             : this(_UnitSprite, MvpActorViewSettings.CreateDefault())
@@ -18,9 +19,15 @@ namespace IdleRPG.Runtime.Actors
         }
 
         public ActorFactory(Sprite _UnitSprite, MvpActorViewSettings _VisualSettings)
+            : this(_UnitSprite, _VisualSettings, CombatLoopMode.Realtime)
+        {
+        }
+
+        public ActorFactory(Sprite _UnitSprite, MvpActorViewSettings _VisualSettings, CombatLoopMode _CombatLoopMode)
         {
             UnitSprite = _UnitSprite;
             VisualSettings = _VisualSettings ?? MvpActorViewSettings.CreateDefault();
+            LoopMode = _CombatLoopMode;
             VisualSettings.EnsureDefaults();
         }
 
@@ -28,6 +35,7 @@ namespace IdleRPG.Runtime.Actors
         {
             GameObject actorObject = new GameObject(_Model.DisplayName);
             actorObject.transform.position = _Position;
+            actorObject.transform.SetParent(_Context.transform, true);
 
             return ConfigureActor(actorObject, _Model, _Color, _Context);
         }
@@ -43,6 +51,9 @@ namespace IdleRPG.Runtime.Actors
             int sortingOrder = _Model.Team == ActorTeam.Player
                 ? VisualSettings.PlayerSortingOrder
                 : VisualSettings.MonsterSortingOrder;
+
+            EnsureAnimation(_ActorObject);
+
             actor.Initialize(_Model, UnitSprite, _Color, VisualSettings.DefeatedTint, sortingOrder);
 
             HealthBarView healthBar = GetOrAdd<HealthBarView>(_ActorObject);
@@ -52,9 +63,23 @@ namespace IdleRPG.Runtime.Actors
 
             AutoCombatController controller = GetOrAdd<AutoCombatController>(_ActorObject);
             controller.Initialize(_Context, VisualSettings.AutoCombat);
+            controller.SetRuntimeActive(LoopMode == CombatLoopMode.Realtime);
 
             _Context.Register(actor);
             return actor;
+        }
+
+        private void EnsureAnimation(GameObject _ActorObject)
+        {
+            if (!VisualSettings.Animation.Enabled)
+                return;
+
+            Animator animator = GetOrAdd<Animator>(_ActorObject);
+            if (VisualSettings.AnimatorController != null)
+                animator.runtimeAnimatorController = VisualSettings.AnimatorController;
+
+            ActorAnimationView animationView = GetOrAdd<ActorAnimationView>(_ActorObject);
+            animationView.Configure(VisualSettings.AnimatorController, VisualSettings.Animation);
         }
 
         private void EnsureNameLabel(Transform _Actor, string _DisplayName, int _SortingOrder)
@@ -74,25 +99,19 @@ namespace IdleRPG.Runtime.Actors
 
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             if (font != null)
-            {
                 textMesh.font = font;
-            }
 
             MeshRenderer renderer = GetOrAdd<MeshRenderer>(labelTransform.gameObject);
             renderer.sortingOrder = _SortingOrder;
             if (textMesh.font != null)
-            {
                 renderer.sharedMaterial = textMesh.font.material;
-            }
         }
 
         private static Transform FindOrCreateChild(Transform _Parent, string _ChildName)
         {
             Transform child = _Parent.Find(_ChildName);
             if (child != null)
-            {
                 return child;
-            }
 
             GameObject childObject = new GameObject(_ChildName);
             childObject.transform.SetParent(_Parent, false);

@@ -31,4 +31,35 @@ namespace IdleRPG.Domain
         Water,
         Decoration
     }
+
+    public enum TargetSelectionMode
+    {
+        Nearest,
+        LowestHp,
+        HighestAttack
+    }
+
+    public enum CombatLoopMode
+    {
+        Realtime,
+        TurnBased
+    }
+
+    public enum StageFlowMode
+    {
+        Field,
+        Battle
+    }
+
+    public enum EncounterTriggerMode
+    {
+        Manual,
+        Distance
+    }
+
+    public enum MonsterSpawnSelectionMode
+    {
+        Sequential,
+        Random
+    }
 }

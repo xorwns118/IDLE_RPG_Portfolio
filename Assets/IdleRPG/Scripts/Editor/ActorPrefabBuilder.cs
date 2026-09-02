@@ -1,9 +1,10 @@
-using System;
 using IdleRPG.Domain;
 using IdleRPG.Runtime.Actors;
 using IdleRPG.Runtime.Combat;
 using IdleRPG.Runtime.Configuration;
 using IdleRPG.Runtime.UI;
+using System;
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
@@ -11,7 +12,7 @@ namespace IdleRPG.Editor
 {
     public sealed class ActorPrefabBuilderWindow : EditorWindow
     {
-        [SerializeField] private ActorPrefabBuildSettings Settings = ActorPrefabBuildSettings.CreateDefaultActor();
+        [SerializeField] private ActorPrefabBuildSettings Settings;
         private Vector2 ScrollPosition;
 
         [MenuItem("Idle RPG/Prefabs/Actor/Create Actor Prefab", priority = 210)]
@@ -24,10 +25,9 @@ namespace IdleRPG.Editor
 
         private void OnEnable()
         {
-            if (Settings == null)
-            {
-                Settings = ActorPrefabBuildSettings.CreateDefaultActor();
-            }
+            Settings ??= ActorPrefabBuildSettings.CreateDefaultActor();
+            Settings.EnsureDefaults(ActorTeam.Player);
+            Settings.AssignDefaultAnimatorAssets();
         }
 
         private void OnGUI()
@@ -43,6 +43,7 @@ namespace IdleRPG.Editor
             ActorPrefabBuilderGui.DrawIdentitySettings(Settings);
             ActorPrefabBuilderGui.DrawStatSettings(Settings.Stats);
             ActorPrefabBuilderGui.DrawViewSettings(Settings);
+            ActorPrefabBuilderGui.SetupPrefabAnimator(Settings);
             ActorPrefabBuilderGui.DrawComponentSettings(Settings);
 
             EditorGUILayout.Space(14f);
@@ -59,7 +60,7 @@ namespace IdleRPG.Editor
 
     public sealed class MonsterPrefabBuilderWindow : EditorWindow
     {
-        [SerializeField] private ActorPrefabBuildSettings Settings = ActorPrefabBuildSettings.CreateDefaultMonster();
+        [SerializeField] private ActorPrefabBuildSettings Settings;
         private Vector2 ScrollPosition;
 
         [MenuItem("Idle RPG/Prefabs/Monster/Create Monster Prefab", priority = 220)]
@@ -73,9 +74,10 @@ namespace IdleRPG.Editor
         private void OnEnable()
         {
             if (Settings == null)
-            {
                 Settings = ActorPrefabBuildSettings.CreateDefaultMonster();
-            }
+
+            Settings.EnsureDefaults(ActorTeam.Monster);
+            Settings.AssignDefaultAnimatorAssets();
         }
 
         private void OnGUI()
@@ -92,6 +94,7 @@ namespace IdleRPG.Editor
             ActorPrefabBuilderGui.DrawStatSettings(Settings.Stats);
             ActorPrefabBuilderGui.DrawRewardSettings(Settings);
             ActorPrefabBuilderGui.DrawViewSettings(Settings);
+            ActorPrefabBuilderGui.SetupPrefabAnimator(Settings);
             ActorPrefabBuilderGui.DrawComponentSettings(Settings);
 
             EditorGUILayout.Space(14f);
@@ -111,21 +114,21 @@ namespace IdleRPG.Editor
         [MenuItem("Idle RPG/Prefabs/Actor/Create Default Actor Prefab", priority = 211)]
         public static void CreateDefaultActorPrefab()
         {
-            GameObject prefab = CreateActorPrefab(ActorPrefabBuildSettings.CreateDefaultActor());
+            GameObject prefab = CreateActorPrefab(ActorPrefabBuildSettings.CreateDefaultActorWithAnimationAssets());
             ShowCreatedDialog(prefab, "Default actor prefab was created.");
         }
 
         [MenuItem("Idle RPG/Prefabs/Monster/Create Default Monster Prefab", priority = 221)]
         public static void CreateDefaultMonsterPrefab()
         {
-            GameObject prefab = CreateMonsterPrefab(ActorPrefabBuildSettings.CreateDefaultMonster());
+            GameObject prefab = CreateMonsterPrefab(ActorPrefabBuildSettings.CreateDefaultMonsterWithAnimationAssets());
             ShowCreatedDialog(prefab, "Default monster prefab was created.");
         }
 
         public static void CreateDefaultActorAndMonsterPrefabs()
         {
-            CreateActorPrefab(ActorPrefabBuildSettings.CreateDefaultActor());
-            CreateMonsterPrefab(ActorPrefabBuildSettings.CreateDefaultMonster());
+            CreateActorPrefab(ActorPrefabBuildSettings.CreateDefaultActorWithAnimationAssets());
+            CreateMonsterPrefab(ActorPrefabBuildSettings.CreateDefaultMonsterWithAnimationAssets());
         }
 
         public static GameObject CreateActorPrefab(ActorPrefabBuildSettings _Settings)
@@ -153,21 +156,17 @@ namespace IdleRPG.Editor
             GameObject root = new GameObject(_Settings.PrefabName);
             try
             {
-                ConfigureRoot(root, _Settings);
+                string assetPath = BuildPrefabPath(_Settings.OutputFolder, _Settings.PrefabName, _Settings.OverwriteExisting);
+                ConfigureRoot(root, _Settings, assetPath);
                 CreateNameLabel(root.transform, _Settings.DisplayName, _Settings.SortingOrder + _Settings.LabelSortingOrderOffset);
                 CreateHpBarChildren(root.transform, _Settings);
 
                 if (_Settings.IncludeEffectAnchors)
-                {
                     CreateEffectAnchors(root.transform);
-                }
 
-                string assetPath = BuildPrefabPath(_Settings.OutputFolder, _Settings.PrefabName, _Settings.OverwriteExisting);
                 GameObject prefabAsset = PrefabUtility.SaveAsPrefabAsset(root, assetPath);
                 if (prefabAsset == null)
-                {
                     throw new InvalidOperationException("Failed to save actor prefab at " + assetPath + ".");
-                }
 
                 return prefabAsset;
             }
@@ -177,7 +176,7 @@ namespace IdleRPG.Editor
             }
         }
 
-        private static void ConfigureRoot(GameObject _Root, ActorPrefabBuildSettings _Settings)
+        private static void ConfigureRoot(GameObject _Root, ActorPrefabBuildSettings _Settings, string _PrefabAssetPath)
         {
             _Root.transform.localScale = _Settings.PreviewScale;
 
@@ -201,7 +200,13 @@ namespace IdleRPG.Editor
 
             if (_Settings.IncludeAnimator)
             {
-                _Root.AddComponent<Animator>();
+                Animator animator = _Root.AddComponent<Animator>();
+                AnimatorOverrideController overrideController = CreateAnimatorOverrideAsset(_Settings, _PrefabAssetPath);
+                if (overrideController != null)
+                    animator.runtimeAnimatorController = overrideController;
+
+                ActorAnimationView animationView = _Root.AddComponent<ActorAnimationView>();
+                animationView.Configure(overrideController, _Settings.Animation);
             }
 
             if (_Settings.IncludeCollider)
@@ -228,21 +233,15 @@ namespace IdleRPG.Editor
 
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             if (font != null)
-            {
                 textMesh.font = font;
-            }
 
             MeshRenderer renderer = label.GetComponent<MeshRenderer>();
             if (renderer == null)
-            {
                 renderer = label.AddComponent<MeshRenderer>();
-            }
 
             renderer.sortingOrder = _SortingOrder;
             if (textMesh.font != null)
-            {
                 renderer.sharedMaterial = textMesh.font.material;
-            }
         }
 
         private static void CreateHpBarChildren(Transform _Root, ActorPrefabBuildSettings _Settings)
@@ -264,13 +263,7 @@ namespace IdleRPG.Editor
                 healthBar.FillSortingOrder);
         }
 
-        private static void CreateHpBarChild(
-            Transform _Root,
-            string _Name,
-            Vector3 _Position,
-            Vector3 _Scale,
-            Color _Color,
-            int _SortingOrder)
+        private static void CreateHpBarChild(Transform _Root, string _Name, Vector3 _Position, Vector3 _Scale, Color _Color, int _SortingOrder)
         {
             GameObject bar = new GameObject(_Name);
             bar.transform.SetParent(_Root, false);
@@ -305,6 +298,93 @@ namespace IdleRPG.Editor
             return _OverwriteExisting ? path : AssetDatabase.GenerateUniqueAssetPath(path);
         }
 
+        private static AnimatorOverrideController CreateAnimatorOverrideAsset(ActorPrefabBuildSettings _Settings, string _PrefabAssetPath)
+        {
+            if (_Settings.PrefAnimatorController == null)
+                return null;
+
+            RuntimeAnimatorController baseController = _Settings.PrefAnimatorController.runtimeAnimatorController;
+            if (baseController == null)
+                throw new InvalidOperationException("Animator Override Controller needs a base Animator Controller.");
+
+            string overridePath = BuildAnimatorOverridePath(_PrefabAssetPath, _Settings.OverwriteExisting);
+            AnimatorOverrideController overrideController = _Settings.OverwriteExisting
+                ? AssetDatabase.LoadAssetAtPath<AnimatorOverrideController>(overridePath)
+                : null;
+
+            if (overrideController == null)
+            {
+                if (AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(overridePath) != null)
+                    overridePath = AssetDatabase.GenerateUniqueAssetPath(overridePath);
+
+                overrideController = new AnimatorOverrideController(baseController);
+                AssetDatabase.CreateAsset(overrideController, overridePath);
+            }
+            else
+            {
+                overrideController.runtimeAnimatorController = baseController;
+            }
+
+            CopyAnimatorOverrides(_Settings.PrefAnimatorController, overrideController);
+            ApplyAnimatorClipOverrides(overrideController, _Settings);
+            EditorUtility.SetDirty(overrideController);
+            AssetDatabase.SaveAssets();
+            return overrideController;
+        }
+
+        private static string BuildAnimatorOverridePath(string _PrefabAssetPath, bool _OverwriteExisting)
+        {
+            string folder = System.IO.Path.GetDirectoryName(_PrefabAssetPath)?.Replace('\\', '/');
+            string fileName = System.IO.Path.GetFileNameWithoutExtension(_PrefabAssetPath);
+            string path = folder + "/" + fileName + "_Animator.overrideController";
+            return _OverwriteExisting ? path : AssetDatabase.GenerateUniqueAssetPath(path);
+        }
+
+        private static void CopyAnimatorOverrides(AnimatorOverrideController _Source, AnimatorOverrideController _Target)
+        {
+            List<KeyValuePair<AnimationClip, AnimationClip>> overrides = new List<KeyValuePair<AnimationClip, AnimationClip>>();
+            _Source.GetOverrides(overrides);
+            if (overrides.Count > 0)
+                _Target.ApplyOverrides(overrides);
+        }
+
+        private static void ApplyAnimatorClipOverrides(AnimatorOverrideController _Controller, ActorPrefabBuildSettings _Settings)
+        {
+            List<KeyValuePair<AnimationClip, AnimationClip>> overrides = new List<KeyValuePair<AnimationClip, AnimationClip>>();
+            _Controller.GetOverrides(overrides);
+
+            for (int i = 0; i < overrides.Count; i++)
+            {
+                AnimationClip sourceClip = overrides[i].Key;
+                AnimationClip replacementClip = GetConfiguredOverrideClip(sourceClip, _Settings);
+                if (replacementClip != null)
+                    overrides[i] = new KeyValuePair<AnimationClip, AnimationClip>(sourceClip, replacementClip);
+            }
+
+            _Controller.ApplyOverrides(overrides);
+        }
+
+        private static AnimationClip GetConfiguredOverrideClip(AnimationClip _SourceClip, ActorPrefabBuildSettings _Settings)
+        {
+            if (_SourceClip == null)
+                return null;
+
+            string normalizedName = _SourceClip.name.Replace("_", string.Empty).Replace(" ", string.Empty).ToLowerInvariant();
+            if (normalizedName.Contains("idle") && normalizedName.Contains("left"))
+                return _Settings.Idle_Left;
+
+            if (normalizedName.Contains("idle") && normalizedName.Contains("right"))
+                return _Settings.Idle_Right;
+
+            if (normalizedName.Contains("walk") && normalizedName.Contains("left"))
+                return _Settings.Walk_Left;
+
+            if (normalizedName.Contains("walk") && normalizedName.Contains("right"))
+                return _Settings.Walk_Right;
+
+            return null;
+        }
+
         private static string MakeSafeAssetName(string _Name)
         {
             string name = string.IsNullOrWhiteSpace(_Name) ? "Actor_Base" : _Name.Trim();
@@ -319,9 +399,7 @@ namespace IdleRPG.Editor
         private static void EnsureAssetFolder(string _Folder)
         {
             if (string.IsNullOrWhiteSpace(_Folder) || !_Folder.StartsWith("Assets", StringComparison.Ordinal))
-            {
                 throw new ArgumentException("Prefab output folder must be inside the Assets folder.");
-            }
 
             string normalizedFolder = _Folder.Replace('\\', '/').TrimEnd('/');
             string[] parts = normalizedFolder.Split('/');
@@ -331,9 +409,7 @@ namespace IdleRPG.Editor
             {
                 string nextPath = currentPath + "/" + parts[i];
                 if (!AssetDatabase.IsValidFolder(nextPath))
-                {
                     AssetDatabase.CreateFolder(currentPath, parts[i]);
-                }
 
                 currentPath = nextPath;
             }
@@ -342,9 +418,7 @@ namespace IdleRPG.Editor
         private static void ShowCreatedDialog(GameObject _Prefab, string _Message)
         {
             if (Application.isBatchMode)
-            {
                 return;
-            }
 
             ActorPrefabBuilderGui.SelectPrefab(_Prefab);
             EditorUtility.DisplayDialog("Idle RPG", _Message + "\n\n" + AssetDatabase.GetAssetPath(_Prefab), "OK");
@@ -427,12 +501,58 @@ namespace IdleRPG.Editor
             EditorGUILayout.Space(8f);
         }
 
+        public static void SetupPrefabAnimator(ActorPrefabBuildSettings _Settings)
+        {
+            EditorGUILayout.LabelField("Animator", EditorStyles.boldLabel);
+            _Settings.IncludeAnimator = EditorGUILayout.Toggle(
+                new GUIContent("Include Animator", "Adds an Animator and assigns a generated Animator Override Controller when a template is provided."),
+                _Settings.IncludeAnimator);
+
+            using (new EditorGUI.DisabledScope(!_Settings.IncludeAnimator))
+            {
+                if (GUILayout.Button("Use Link Animation Defaults"))
+                    _Settings.AssignDefaultAnimatorAssets();
+
+                _Settings.PrefAnimatorController = (AnimatorOverrideController)EditorGUILayout.ObjectField(
+                    new GUIContent("Override Controller Template", "Template Animator Override Controller. A prefab-specific copy is generated on prefab creation."),
+                    _Settings.PrefAnimatorController,
+                    typeof(AnimatorOverrideController),
+                    false);
+
+                _Settings.Idle_Left = (AnimationClip)EditorGUILayout.ObjectField("Idle Left", _Settings.Idle_Left, typeof(AnimationClip), false);
+                _Settings.Idle_Right = (AnimationClip)EditorGUILayout.ObjectField("Idle Right", _Settings.Idle_Right, typeof(AnimationClip), false);
+                _Settings.Walk_Left = (AnimationClip)EditorGUILayout.ObjectField("Walk Left", _Settings.Walk_Left, typeof(AnimationClip), false);
+                _Settings.Walk_Right = (AnimationClip)EditorGUILayout.ObjectField("Walk Right", _Settings.Walk_Right, typeof(AnimationClip), false);
+
+                _Settings.Animation.Enabled = EditorGUILayout.Toggle(
+                    new GUIContent("Drive Animator Parameters", "Updates IsWalk and IsLeft while the actor moves at runtime."),
+                    _Settings.Animation.Enabled);
+                _Settings.Animation.WalkParameterName = EditorGUILayout.TextField(
+                    new GUIContent("Walk Parameter", "Bool parameter used for walk/idle state transitions."),
+                    _Settings.Animation.WalkParameterName);
+                _Settings.Animation.LeftParameterName = EditorGUILayout.TextField(
+                    new GUIContent("Left Parameter", "Bool parameter used for facing direction transitions."),
+                    _Settings.Animation.LeftParameterName);
+                _Settings.Animation.MovementThreshold = Mathf.Max(
+                    0f,
+                    EditorGUILayout.FloatField(
+                        new GUIContent("Movement Threshold", "Minimum frame movement treated as walking."),
+                        _Settings.Animation.MovementThreshold));
+                _Settings.Animation.MirrorSpriteRendererByFacing = EditorGUILayout.Toggle(
+                    new GUIContent("Mirror Sprite By Facing", "Keeps SpriteRenderer.flipX synced with facing direction for mirrored sprite sets."),
+                    _Settings.Animation.MirrorSpriteRendererByFacing);
+
+                if (_Settings.PrefAnimatorController == null)
+                    EditorGUILayout.HelpBox("Assign an Animator Override Controller template to generate and connect prefab-specific animation overrides.", MessageType.Info);
+            }
+
+            EditorGUILayout.Space(8f);
+        }
+
+
         public static void DrawComponentSettings(ActorPrefabBuildSettings _Settings)
         {
             EditorGUILayout.LabelField("Components", EditorStyles.boldLabel);
-            _Settings.IncludeAnimator = EditorGUILayout.Toggle(
-                new GUIContent("Include Animator", "Adds an Animator placeholder for future animation controller assignment."),
-                _Settings.IncludeAnimator);
             _Settings.IncludeCollider = EditorGUILayout.Toggle(
                 new GUIContent("Include Collider", "Adds a BoxCollider2D sized for a simple vertical actor body."),
                 _Settings.IncludeCollider);
@@ -451,9 +571,7 @@ namespace IdleRPG.Editor
         public static void SelectPrefab(GameObject _Prefab)
         {
             if (_Prefab == null)
-            {
                 return;
-            }
 
             Selection.activeObject = _Prefab;
             EditorGUIUtility.PingObject(_Prefab);
@@ -493,10 +611,23 @@ namespace IdleRPG.Editor
         public Vector2 ColliderSize = new Vector2(0.75f, 1.15f);
         public Vector2 ColliderOffset = new Vector2(0f, 0.08f);
         public bool IncludeEffectAnchors = true;
+        public AnimatorOverrideController PrefAnimatorController;
+        public AnimationClip Idle_Right;
+        public AnimationClip Idle_Left;
+        public AnimationClip Walk_Right;
+        public AnimationClip Walk_Left;
+        public MvpActorAnimationSettings Animation = new MvpActorAnimationSettings();
 
         public static ActorPrefabBuildSettings CreateDefaultActor()
         {
             return new ActorPrefabBuildSettings();
+        }
+
+        public static ActorPrefabBuildSettings CreateDefaultActorWithAnimationAssets()
+        {
+            ActorPrefabBuildSettings settings = CreateDefaultActor();
+            settings.AssignDefaultAnimatorAssets();
+            return settings;
         }
 
         public static ActorPrefabBuildSettings CreateDefaultMonster()
@@ -517,6 +648,31 @@ namespace IdleRPG.Editor
             };
         }
 
+        public static ActorPrefabBuildSettings CreateDefaultMonsterWithAnimationAssets()
+        {
+            ActorPrefabBuildSettings settings = CreateDefaultMonster();
+            settings.AssignDefaultAnimatorAssets();
+            return settings;
+        }
+
+        public void AssignDefaultAnimatorAssets()
+        {
+            if (PrefAnimatorController == null)
+                PrefAnimatorController = AssetDatabase.LoadAssetAtPath<AnimatorOverrideController>("Assets/IdleRPG/Animations/Default_Character.overrideController");
+
+            if (Idle_Left == null)
+                Idle_Left = AssetDatabase.LoadAssetAtPath<AnimationClip>("Assets/IdleRPG/Animations/Link_Idle_Left.anim");
+
+            if (Idle_Right == null)
+                Idle_Right = AssetDatabase.LoadAssetAtPath<AnimationClip>("Assets/IdleRPG/Animations/Link_Idle_Right.anim");
+
+            if (Walk_Left == null)
+                Walk_Left = AssetDatabase.LoadAssetAtPath<AnimationClip>("Assets/IdleRPG/Animations/Link_Walk_Left.anim");
+
+            if (Walk_Right == null)
+                Walk_Right = AssetDatabase.LoadAssetAtPath<AnimationClip>("Assets/IdleRPG/Animations/Link_Walk_Right.anim");
+        }
+
         public void EnsureDefaults(ActorTeam _RequiredTeam)
         {
             Team = _RequiredTeam;
@@ -525,19 +681,13 @@ namespace IdleRPG.Editor
                 : OutputFolder.Replace('\\', '/').TrimEnd('/');
 
             if (string.IsNullOrWhiteSpace(PrefabName))
-            {
                 PrefabName = _RequiredTeam == ActorTeam.Player ? "Hero_Base" : "Monster_Base";
-            }
 
             if (string.IsNullOrWhiteSpace(Id))
-            {
                 Id = _RequiredTeam == ActorTeam.Player ? "player.hero" : "monster.base";
-            }
 
             if (string.IsNullOrWhiteSpace(DisplayName))
-            {
                 DisplayName = Id;
-            }
 
             if (Stats == null)
             {
@@ -545,6 +695,11 @@ namespace IdleRPG.Editor
                     ? MvpStatBlockSettings.Create(140f, 16f, 3f, 1.05f, 0.7f, 2.35f, 0.15f, 1.5f)
                     : MvpStatBlockSettings.Create(32f, 5f, 0f, 0.85f, 1.25f, 1.2f, 0.02f, 1.25f);
             }
+
+            if (Animation == null)
+                Animation = new MvpActorAnimationSettings();
+
+            Animation.EnsureDefaults();
 
             GoldReward = Mathf.Max(0, GoldReward);
             ExpReward = Mathf.Max(0, ExpReward);

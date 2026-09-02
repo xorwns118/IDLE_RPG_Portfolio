@@ -17,8 +17,20 @@ namespace IdleRPG.Runtime.Configuration
         [Header("Actor View")]
         public MvpActorViewSettings Actors = new MvpActorViewSettings();
 
+        [Header("Combat Loop")]
+        public MvpCombatLoopSettings CombatLoop = new MvpCombatLoopSettings();
+
         [Header("Monster Spawn")]
         public MvpMonsterSpawnSettings Spawn = new MvpMonsterSpawnSettings();
+
+        [Header("Scene Flow")]
+        public MvpSceneFlowSettings SceneFlow = new MvpSceneFlowSettings();
+
+        [Header("Field Encounter")]
+        public MvpFieldEncounterSettings FieldEncounter = new MvpFieldEncounterSettings();
+
+        [Header("Turn Combat")]
+        public MvpTurnCombatSettings TurnCombat = new MvpTurnCombatSettings();
 
         [Header("HUD")]
         public MvpHudSettings Hud = new MvpHudSettings();
@@ -45,8 +57,20 @@ namespace IdleRPG.Runtime.Configuration
             if (Actors == null)
                 Actors = new MvpActorViewSettings();
 
+            if (CombatLoop == null)
+                CombatLoop = new MvpCombatLoopSettings();
+
             if (Spawn == null)
                 Spawn = new MvpMonsterSpawnSettings();
+
+            if (SceneFlow == null)
+                SceneFlow = new MvpSceneFlowSettings();
+
+            if (FieldEncounter == null)
+                FieldEncounter = new MvpFieldEncounterSettings();
+
+            if (TurnCombat == null)
+                TurnCombat = new MvpTurnCombatSettings();
 
             if (Hud == null)
                 Hud = new MvpHudSettings();
@@ -57,24 +81,91 @@ namespace IdleRPG.Runtime.Configuration
             if (Stage == null)
                 Stage = new MvpStageRuntimeSettings();
 
+            Camera.EnsureDefaults();
             World.EnsureDefaults();
             Actors.EnsureDefaults();
+            CombatLoop.EnsureDefaults();
             Spawn.EnsureDefaults();
+            SceneFlow.EnsureDefaults();
+            FieldEncounter.EnsureDefaults();
+            TurnCombat.EnsureDefaults();
             Hud.EnsureDefaults();
             RestartPanel.EnsureDefaults();
+            Stage.EnsureDefaults();
+        }
+    }
+
+    [Serializable]
+    public sealed class MvpCombatLoopSettings
+    {
+        [Tooltip("Choose exactly one combat loop. Realtime uses per-actor AutoCombat, TurnBased uses the stage-level turn controller.")]
+        public CombatLoopMode Mode = CombatLoopMode.Realtime;
+
+        public void EnsureDefaults()
+        {
+            if (!Enum.IsDefined(typeof(CombatLoopMode), Mode))
+                Mode = CombatLoopMode.Realtime;
         }
     }
 
     [Serializable]
     public sealed class MvpCameraSettings
     {
-        [Tooltip("Main camera position used by the MVP scene builder.")]
+        [Tooltip("Fallback camera position. When Auto Fit Tile Map is enabled, X/Y are replaced by the tile map center and Z is kept from this value.")]
         public Vector3 Position = new Vector3(0f, 0.05f, -10f);
 
+        [Tooltip("Fallback orthographic size used when no tile map is available or Auto Fit Tile Map is disabled.")]
         [Min(0.1f)]
         public float OrthographicSize = 4.35f;
 
+        [Tooltip("Center the camera on the tile map and derive orthographic size from the configured cell count.")]
+        public bool AutoFitTileMap = true;
+
+        [Tooltip("Largest expected map width in cells. Smaller maps keep this frame size and are centered inside it.")]
+        [Min(1)] public int ReferenceMaxColumns = 10;
+
+        [Tooltip("Largest expected map height in cells. Smaller maps keep this frame size and are centered inside it.")]
+        [Min(1)] public int ReferenceMaxRows = 12;
+
+        [Tooltip("Extra empty space around the fitted map, measured in tile cells.")]
+        [Min(0f)] public float TileMapPaddingCells = 0.75f;
+
+        [Tooltip("Smallest allowed auto-fitted camera size.")]
+        [Min(0.1f)] public float MinimumOrthographicSize = 3f;
+
+        [Tooltip("Largest allowed auto-fitted camera size.")]
+        [Min(0.1f)] public float MaximumOrthographicSize = 8f;
+
         public Color BackgroundColor = new Color(0.08f, 0.1f, 0.13f);
+
+        public void EnsureDefaults()
+        {
+            OrthographicSize = Mathf.Max(0.1f, OrthographicSize);
+            ReferenceMaxColumns = Mathf.Max(1, ReferenceMaxColumns);
+            ReferenceMaxRows = Mathf.Max(1, ReferenceMaxRows);
+            TileMapPaddingCells = Mathf.Max(0f, TileMapPaddingCells);
+            MinimumOrthographicSize = Mathf.Max(0.1f, MinimumOrthographicSize);
+            MaximumOrthographicSize = Mathf.Max(MinimumOrthographicSize, MaximumOrthographicSize);
+        }
+
+        public float CalculateTileMapOrthographicSize(MvpTileMapSettings _TileMapSettings, float _Aspect)
+        {
+            if (_TileMapSettings == null || !_TileMapSettings.Enabled)
+                return OrthographicSize;
+
+            float aspect = Mathf.Max(0.01f, _Aspect);
+            Vector2 cellSize = _TileMapSettings.GetSafeCellSize();
+            int fitColumns = Mathf.Max(ReferenceMaxColumns, _TileMapSettings.Columns);
+            int fitRows = Mathf.Max(ReferenceMaxRows, _TileMapSettings.Rows);
+            float paddingWidth = TileMapPaddingCells * cellSize.x * 2f;
+            float paddingHeight = TileMapPaddingCells * cellSize.y * 2f;
+            float requiredWidth = fitColumns * cellSize.x + paddingWidth;
+            float requiredHeight = fitRows * cellSize.y + paddingHeight;
+            float widthDrivenSize = requiredWidth * 0.5f / aspect;
+            float heightDrivenSize = requiredHeight * 0.5f;
+
+            return Mathf.Clamp(Mathf.Max(widthDrivenSize, heightDrivenSize), MinimumOrthographicSize, MaximumOrthographicSize);
+        }
     }
 
     [Serializable]
@@ -115,7 +206,10 @@ namespace IdleRPG.Runtime.Configuration
         public Vector2 CellSize = new Vector2(0.8f, 0.8f);
         public Vector3 Origin = new Vector3(-2.8f, -1.6f, 0f);
         public Vector2Int PlayerStartCell = new Vector2Int(1, 2);
+        [HideInInspector]
         public Vector2Int MonsterSpawnCell = new Vector2Int(6, 2);
+        [Tooltip("Tile cells that can be used as monster spawn locations. The first cell is also used by the scene marker.")]
+        public Vector2Int[] MonsterSpawnCells = Array.Empty<Vector2Int>();
         public Vector3 ActorAnchorOffset = new Vector3(0f, 0.22f, 0f);
 
         [Header("Tile Colors")]
@@ -146,15 +240,44 @@ namespace IdleRPG.Runtime.Configuration
         {
             Columns = Mathf.Max(1, Columns);
             Rows = Mathf.Max(1, Rows);
-            float squareCellSize = Mathf.Max(0.1f, Mathf.Max(CellSize.x, CellSize.y));
-            CellSize = new Vector2(squareCellSize, squareCellSize);
+            CellSize = GetSafeCellSize();
             PlayerStartCell = ClampCell(PlayerStartCell);
             MonsterSpawnCell = ClampCell(MonsterSpawnCell);
+            NormalizeMonsterSpawnCells();
             TileSortingOrderStep = Mathf.Max(1, TileSortingOrderStep);
             ActorSortingOrderStep = Mathf.Max(1, ActorSortingOrderStep);
             OverlaySortingOffset = Mathf.Max(0, OverlaySortingOffset);
             NormalizeSpritePalette();
             NormalizeCellOverrides();
+        }
+
+        public Vector2 GetSafeCellSize()
+        {
+            float squareCellSize = Mathf.Max(0.1f, Mathf.Max(CellSize.x, CellSize.y));
+            return new Vector2(squareCellSize, squareCellSize);
+        }
+
+        public Vector2 GetMapSize()
+        {
+            Vector2 cellSize = GetSafeCellSize();
+            return new Vector2(
+                Mathf.Max(1, Columns) * cellSize.x,
+                Mathf.Max(1, Rows) * cellSize.y);
+        }
+
+        public Vector3 GetMapCenterLocal()
+        {
+            Vector2 cellSize = GetSafeCellSize();
+            return new Vector3(
+                Origin.x + (Mathf.Max(1, Columns) - 1) * cellSize.x * 0.5f,
+                Origin.y + (Mathf.Max(1, Rows) - 1) * cellSize.y * 0.5f,
+                Origin.z);
+        }
+
+        public Bounds GetLocalBounds()
+        {
+            Vector2 mapSize = GetMapSize();
+            return new Bounds(GetMapCenterLocal(), new Vector3(mapSize.x, mapSize.y, 0f));
         }
 
         public Vector3 CellToLocal(Vector2Int _Cell)
@@ -200,24 +323,16 @@ namespace IdleRPG.Runtime.Configuration
             Vector2Int cell = ClampCell(_Cell);
             MvpTileSpriteSettings spriteSettings = GetSpriteSettings(GetTileVisualKind(cell));
             if (spriteSettings != null && spriteSettings.Sprite != null)
-            {
                 return spriteSettings.Tint;
-            }
 
             if (cell == PlayerStartCell)
-            {
                 return PlayerStartTileColor;
-            }
 
-            if (cell == MonsterSpawnCell)
-            {
+            if (IsMonsterSpawnCell(cell))
                 return MonsterSpawnTileColor;
-            }
 
             if (GetTileKind(cell) == TileKind.Blocked)
-            {
                 return BlockedTileColor;
-            }
 
             return (cell.x + cell.y) % 2 == 0 ? PrimaryTileColor : AlternateTileColor;
         }
@@ -244,9 +359,7 @@ namespace IdleRPG.Runtime.Configuration
         public MvpTileSpriteSettings GetSpriteSettings(TileVisualKind _VisualKind)
         {
             if (SpritePalette == null)
-            {
                 return null;
-            }
 
             MvpTileSpriteSettings fallback = null;
             foreach (MvpTileSpriteSettings spriteSettings in SpritePalette)
@@ -274,7 +387,7 @@ namespace IdleRPG.Runtime.Configuration
         public bool IsWalkable(Vector2Int _Cell)
         {
             Vector2Int cell = ClampCell(_Cell);
-            return cell == PlayerStartCell || cell == MonsterSpawnCell || GetTileKind(cell) != TileKind.Blocked;
+            return cell == PlayerStartCell || IsMonsterSpawnCell(cell) || GetTileKind(cell) != TileKind.Blocked;
         }
 
         public void SetTileKind(Vector2Int _Cell, TileKind _Kind)
@@ -297,7 +410,7 @@ namespace IdleRPG.Runtime.Configuration
         public void SetCell(Vector2Int _Cell, TileKind _Kind, TileVisualKind _VisualKind)
         {
             Vector2Int cell = ClampCell(_Cell);
-            TileKind kind = cell == PlayerStartCell || cell == MonsterSpawnCell ? TileKind.Walkable : _Kind;
+            TileKind kind = cell == PlayerStartCell || IsMonsterSpawnCell(cell) ? TileKind.Walkable : _Kind;
             if (kind == TileKind.Walkable && _VisualKind == DefaultVisualKind)
             {
                 RemoveTileOverride(cell);
@@ -341,6 +454,89 @@ namespace IdleRPG.Runtime.Configuration
             CellOverrides = overrides.ToArray();
         }
 
+        public int MonsterSpawnCellCount => MonsterSpawnCells != null && MonsterSpawnCells.Length > 0 ? MonsterSpawnCells.Length : 1;
+        public bool HasMultipleMonsterSpawnCells => MonsterSpawnCellCount > 1;
+
+        public Vector2Int GetPrimaryMonsterSpawnCell()
+        {
+            if (MonsterSpawnCells == null || MonsterSpawnCells.Length == 0)
+                return ClampCell(MonsterSpawnCell);
+
+            return ClampCell(MonsterSpawnCells[0]);
+        }
+
+        public Vector2Int GetMonsterSpawnCell(int _Index)
+        {
+            if (MonsterSpawnCells == null || MonsterSpawnCells.Length == 0)
+                return ClampCell(MonsterSpawnCell);
+
+            int safeIndex = Mathf.Abs(_Index) % MonsterSpawnCells.Length;
+            return ClampCell(MonsterSpawnCells[safeIndex]);
+        }
+
+        public Vector2Int[] GetMonsterSpawnCells()
+        {
+            int count = MonsterSpawnCellCount;
+            Vector2Int[] cells = new Vector2Int[count];
+            for (int i = 0; i < count; i++)
+            {
+                cells[i] = GetMonsterSpawnCell(i);
+            }
+
+            return cells;
+        }
+
+        public bool IsMonsterSpawnCell(Vector2Int _Cell)
+        {
+            Vector2Int cell = ClampCell(_Cell);
+            if (MonsterSpawnCells == null || MonsterSpawnCells.Length == 0)
+                return cell == ClampCell(MonsterSpawnCell);
+
+            for (int i = 0; i < MonsterSpawnCells.Length; i++)
+            {
+                if (ClampCell(MonsterSpawnCells[i]) == cell)
+                    return true;
+            }
+
+            return false;
+        }
+
+        public void SetPrimaryMonsterSpawnCell(Vector2Int _Cell)
+        {
+            Vector2Int cell = ClampCell(_Cell);
+            List<Vector2Int> cells = BuildUniqueMonsterSpawnCells();
+            cells.Remove(cell);
+            cells.Insert(0, cell);
+            ApplyMonsterSpawnCells(cells);
+        }
+
+        public void AddMonsterSpawnCell(Vector2Int _Cell)
+        {
+            Vector2Int cell = ClampCell(_Cell);
+            List<Vector2Int> cells = BuildUniqueMonsterSpawnCells();
+            if (!cells.Contains(cell))
+                cells.Add(cell);
+
+            ApplyMonsterSpawnCells(cells);
+        }
+
+        public void RemoveMonsterSpawnCell(Vector2Int _Cell)
+        {
+            Vector2Int cell = ClampCell(_Cell);
+            List<Vector2Int> cells = BuildUniqueMonsterSpawnCells();
+            if (cells.Count <= 1)
+            {
+                ApplyMonsterSpawnCells(cells);
+                return;
+            }
+
+            cells.Remove(cell);
+            if (cells.Count == 0)
+                cells.Add(cell);
+
+            ApplyMonsterSpawnCells(cells);
+        }
+
         private void NormalizeSpritePalette()
         {
             if (SpritePalette == null)
@@ -348,62 +544,136 @@ namespace IdleRPG.Runtime.Configuration
 
             Array visualKinds = Enum.GetValues(typeof(TileVisualKind));
             List<MvpTileSpriteSettings> normalized = new List<MvpTileSpriteSettings>(visualKinds.Length);
+            bool shouldAssign = SpritePalette.Length != visualKinds.Length;
             foreach (object visualKindValue in visualKinds)
             {
                 TileVisualKind visualKind = (TileVisualKind)visualKindValue;
                 MvpTileSpriteSettings spriteSettings = GetSpriteSettings(visualKind) ?? MvpTileSpriteSettings.CreateDefault(visualKind);
                 spriteSettings.VisualKind = visualKind;
                 spriteSettings.EnsureDefaults();
+                if (!shouldAssign && SpritePalette[normalized.Count] != spriteSettings)
+                    shouldAssign = true;
+
                 normalized.Add(spriteSettings);
             }
 
-            SpritePalette = normalized.ToArray();
+            if (shouldAssign)
+                SpritePalette = normalized.ToArray();
         }
 
         private void NormalizeCellOverrides()
         {
-            if (CellOverrides == null || CellOverrides.Length == 0)
+            if (CellOverrides == null)
             {
                 CellOverrides = Array.Empty<MvpTileCellSettings>();
                 return;
             }
 
+            if (CellOverrides.Length == 0)
+                return;
+
             List<MvpTileCellSettings> normalized = new List<MvpTileCellSettings>(CellOverrides.Length);
             HashSet<Vector2Int> seenCells = new HashSet<Vector2Int>();
+            bool shouldAssign = false;
 
             for (int i = CellOverrides.Length - 1; i >= 0; i--)
             {
                 MvpTileCellSettings overrideCell = CellOverrides[i];
                 if (overrideCell == null)
+                {
+                    shouldAssign = true;
                     continue;
+                }
 
-                overrideCell.Cell = ClampCell(overrideCell.Cell);
+                Vector2Int clampedCell = ClampCell(overrideCell.Cell);
+                if (overrideCell.Cell != clampedCell)
+                {
+                    overrideCell.Cell = clampedCell;
+                    shouldAssign = true;
+                }
+
                 if (!Enum.IsDefined(typeof(TileVisualKind), overrideCell.VisualKind))
+                {
                     overrideCell.VisualKind = DefaultVisualKind;
+                    shouldAssign = true;
+                }
 
                 if ((overrideCell.Kind == TileKind.Walkable && overrideCell.VisualKind == DefaultVisualKind) || seenCells.Contains(overrideCell.Cell))
+                {
+                    shouldAssign = true;
                     continue;
+                }
 
                 seenCells.Add(overrideCell.Cell);
                 normalized.Insert(0, overrideCell);
             }
 
-            CellOverrides = normalized.ToArray();
+            if (shouldAssign || normalized.Count != CellOverrides.Length)
+                CellOverrides = normalized.ToArray();
+        }
+
+        private void NormalizeMonsterSpawnCells()
+        {
+            List<Vector2Int> cells = BuildUniqueMonsterSpawnCells();
+            ApplyMonsterSpawnCells(cells);
+        }
+
+        private List<Vector2Int> BuildUniqueMonsterSpawnCells()
+        {
+            List<Vector2Int> cells = new List<Vector2Int>();
+            if (MonsterSpawnCells != null)
+            {
+                for (int i = 0; i < MonsterSpawnCells.Length; i++)
+                {
+                    AddUniqueMonsterSpawnCell(cells, MonsterSpawnCells[i]);
+                }
+            }
+
+            if (cells.Count == 0)
+                AddUniqueMonsterSpawnCell(cells, MonsterSpawnCell);
+
+            return cells;
+        }
+
+        private void AddUniqueMonsterSpawnCell(List<Vector2Int> _Cells, Vector2Int _Cell)
+        {
+            Vector2Int cell = ClampCell(_Cell);
+            if (!_Cells.Contains(cell))
+                _Cells.Add(cell);
+        }
+
+        private void ApplyMonsterSpawnCells(List<Vector2Int> _Cells)
+        {
+            if (_Cells == null || _Cells.Count == 0)
+                _Cells = new List<Vector2Int> { ClampCell(MonsterSpawnCell) };
+
+            MonsterSpawnCell = ClampCell(_Cells[0]);
+            bool shouldAssign = MonsterSpawnCells == null || MonsterSpawnCells.Length != _Cells.Count;
+            if (!shouldAssign)
+            {
+                for (int i = 0; i < _Cells.Count; i++)
+                {
+                    if (MonsterSpawnCells[i] == _Cells[i])
+                        continue;
+
+                    shouldAssign = true;
+                    break;
+                }
+            }
+
+            if (shouldAssign)
+                MonsterSpawnCells = _Cells.ToArray();
         }
 
         private MvpTileCellSettings FindCellOverride(Vector2Int _Cell)
         {
             if (CellOverrides == null)
-            {
                 return null;
-            }
 
             foreach (MvpTileCellSettings overrideCell in CellOverrides)
             {
                 if (overrideCell != null && overrideCell.Cell == _Cell)
-                {
                     return overrideCell;
-                }
             }
 
             return null;
@@ -515,8 +785,14 @@ namespace IdleRPG.Runtime.Configuration
         public int PlayerSortingOrder = 10;
         public int MonsterSortingOrder = 9;
         public int LabelSortingOrderOffset = 20;
+        [Header("Animation")]
+        [Tooltip("Animator Controller assigned to runtime-spawned actors. Use an Animator Override Controller when character clips differ by prefab.")]
+        public RuntimeAnimatorController AnimatorController;
+        public MvpActorAnimationSettings Animation = new MvpActorAnimationSettings();
+        [Header("Runtime Helpers")]
         public MvpHealthBarSettings HealthBar = new MvpHealthBarSettings();
         public MvpAutoCombatSettings AutoCombat = new MvpAutoCombatSettings();
+        public MvpTargetingSettings Targeting = new MvpTargetingSettings();
 
         public static MvpActorViewSettings CreateDefault()
         {
@@ -527,9 +803,67 @@ namespace IdleRPG.Runtime.Configuration
         {
             if (HealthBar == null) HealthBar = new MvpHealthBarSettings();
             if (AutoCombat == null) AutoCombat = new MvpAutoCombatSettings();
+            if (Targeting == null) Targeting = new MvpTargetingSettings();
+            if (Animation == null) Animation = new MvpActorAnimationSettings();
             NameLabelCharacterSize = Mathf.Max(0.01f, NameLabelCharacterSize);
             NameLabelFontSize = Mathf.Max(1, NameLabelFontSize);
+            Animation.EnsureDefaults();
             AutoCombat.EnsureDefaults();
+            Targeting.EnsureDefaults();
+        }
+    }
+
+    [Serializable]
+    public sealed class MvpActorAnimationSettings
+    {
+        [Tooltip("Enable Animator parameter updates for runtime-spawned actors.")]
+        public bool Enabled = true;
+
+        [Tooltip("Bool parameter set to true only while the actor position changes.")]
+        public string WalkParameterName = "IsWalk";
+
+        [Tooltip("Bool parameter set to true when the actor faces or moves left.")]
+        public string LeftParameterName = "IsLeft";
+
+        [Tooltip("Minimum frame movement treated as actual walking.")]
+        [Min(0f)] public float MovementThreshold = 0.001f;
+
+        [Tooltip("Keep SpriteRenderer.flipX synced with facing direction. Keep this off when left/right animation clips already include their final facing direction.")]
+        public bool MirrorSpriteRendererByFacing;
+
+        public void EnsureDefaults()
+        {
+            if (string.IsNullOrWhiteSpace(WalkParameterName))
+                WalkParameterName = "IsWalk";
+
+            if (string.IsNullOrWhiteSpace(LeftParameterName))
+                LeftParameterName = "IsLeft";
+
+            MovementThreshold = Mathf.Max(0f, MovementThreshold);
+        }
+    }
+
+    [Serializable]
+    public sealed class MvpTargetingSettings
+    {
+        [Tooltip("Rule used when several enemies are valid.")]
+        public TargetSelectionMode SelectionMode = TargetSelectionMode.Nearest;
+
+        [Tooltip("If enabled, actors ignore enemies outside Search Range. Keep this off for battle scenes that should auto-start from any spawn distance.")]
+        public bool LimitSearchRange = false;
+
+        [Min(0.1f)] public float SearchRange = 8f;
+
+        [Tooltip("Extra tolerance added to Attack Range checks.")]
+        [Min(0f)] public float AttackRangePadding = 0.05f;
+
+        public void EnsureDefaults()
+        {
+            if (!Enum.IsDefined(typeof(TargetSelectionMode), SelectionMode))
+                SelectionMode = TargetSelectionMode.Nearest;
+
+            SearchRange = Mathf.Max(0.1f, SearchRange);
+            AttackRangePadding = Mathf.Max(0f, AttackRangePadding);
         }
     }
 
@@ -548,6 +882,9 @@ namespace IdleRPG.Runtime.Configuration
     [Serializable]
     public sealed class MvpAutoCombatSettings
     {
+        [Tooltip("Enable real-time per-actor auto combat updates.")]
+        public bool Enabled = true;
+
         [Min(0f)] public float InitialAttackDelayMin = 0f;
         [Min(0f)] public float InitialAttackDelayMax = 0.15f;
         [Tooltip("Off by default. Enable only when actors should step through tile cells during combat.")]
@@ -569,10 +906,86 @@ namespace IdleRPG.Runtime.Configuration
     }
 
     [Serializable]
+    public sealed class MvpSceneFlowSettings
+    {
+        [Tooltip("If enabled, Stage Scene Flow will load the configured scenes when flow changes.")]
+        public bool LoadConfiguredScenes = false;
+
+        public StageFlowMode InitialMode = StageFlowMode.Battle;
+        public string FieldSceneName = "FieldScene";
+        public string BattleSceneName = "BattleScene";
+
+        public void EnsureDefaults()
+        {
+            if (!Enum.IsDefined(typeof(StageFlowMode), InitialMode))
+                InitialMode = StageFlowMode.Battle;
+
+            if (string.IsNullOrWhiteSpace(FieldSceneName))
+                FieldSceneName = "FieldScene";
+
+            if (string.IsNullOrWhiteSpace(BattleSceneName))
+                BattleSceneName = "BattleScene";
+        }
+    }
+
+    [Serializable]
+    public sealed class MvpFieldEncounterSettings
+    {
+        [Tooltip("Enable field encounter checks.")]
+        public bool Enabled = false;
+
+        public EncounterTriggerMode TriggerMode = EncounterTriggerMode.Distance;
+
+        [Tooltip("Distance between the player and encounter point that starts battle.")]
+        [Min(0.01f)] public float TriggerDistance = 0.75f;
+
+        [Min(1)] public int BattleStageNumber = 1;
+        public bool TriggerOnce = true;
+
+        public void EnsureDefaults()
+        {
+            if (!Enum.IsDefined(typeof(EncounterTriggerMode), TriggerMode))
+                TriggerMode = EncounterTriggerMode.Distance;
+
+            TriggerDistance = Mathf.Max(0.01f, TriggerDistance);
+            BattleStageNumber = Mathf.Max(1, BattleStageNumber);
+        }
+    }
+
+    [Serializable]
+    public sealed class MvpTurnCombatSettings
+    {
+        [Min(0.01f)] public float TurnDelaySeconds = 0.45f;
+        public bool PlayerActsFirst = true;
+        [Tooltip("Use tile cells for turn movement and attack range when a Tile Map Layout exists.")]
+        public bool UseTileMovement = true;
+        [Tooltip("Seconds used as the movement budget in non-tile turn combat.")]
+        [Min(0.01f)] public float WorldMoveSecondsPerTurn = 0.45f;
+        [Tooltip("Visual duration for one turn movement action.")]
+        [Min(0f)] public float MoveAnimationDuration = 0.18f;
+        [Tooltip("Distance treated as no movement for turn actions.")]
+        [Min(0.001f)] public float ArrivalThreshold = 0.03f;
+
+        public void EnsureDefaults()
+        {
+            TurnDelaySeconds = Mathf.Max(0.01f, TurnDelaySeconds);
+            WorldMoveSecondsPerTurn = Mathf.Max(0.01f, WorldMoveSecondsPerTurn);
+            MoveAnimationDuration = Mathf.Max(0f, MoveAnimationDuration);
+            ArrivalThreshold = Mathf.Max(0.001f, ArrivalThreshold);
+        }
+    }
+
+    [Serializable]
     public sealed class MvpMonsterSpawnSettings
     {
         [Tooltip("Position used when a scene spawn point is not assigned.")]
         public Vector3 FallbackPosition = new Vector3(3.3f, 0f, 0f);
+
+        [Tooltip("How to choose one spawn location when several positions or cells are configured.")]
+        public MonsterSpawnSelectionMode SelectionMode = MonsterSpawnSelectionMode.Sequential;
+
+        [Tooltip("Optional world positions used when Tile Map is disabled. If empty, the scene Monster Spawn Point and repeated offset are used.")]
+        public Vector3[] SpawnPositions = new Vector3[0];
 
         [Tooltip("Offset added for repeated spawns in the same stage.")]
         public Vector3 RepeatedSpawnOffset = new Vector3(0.35f, 0f, 0f);
@@ -580,15 +993,39 @@ namespace IdleRPG.Runtime.Configuration
         [Tooltip("Uses tile coordinates when a Tile Map Layout exists in the scene.")]
         public bool UseTileSpawnOffset = true;
 
+        [Tooltip("Optional tile cells used when Tile Map is enabled. If empty, the scene Monster Spawn Point and repeated cell offset are used.")]
+        public Vector2Int[] SpawnCells = new Vector2Int[0];
+
         [Tooltip("Cell offset added for repeated spawns in the same stage.")]
         public Vector2Int RepeatedSpawnCellOffset = new Vector2Int(0, 1);
 
+        public bool HasSpawnPositions => SpawnPositions != null && SpawnPositions.Length > 0;
+        public bool HasSpawnCells => SpawnCells != null && SpawnCells.Length > 0;
+
         public void EnsureDefaults()
         {
+            if (!Enum.IsDefined(typeof(MonsterSpawnSelectionMode), SelectionMode))
+                SelectionMode = MonsterSpawnSelectionMode.Sequential;
+
+            if (SpawnPositions == null)
+                SpawnPositions = new Vector3[0];
+
+            if (SpawnCells == null)
+                SpawnCells = new Vector2Int[0];
+
             if (RepeatedSpawnCellOffset == Vector2Int.zero)
-            {
                 RepeatedSpawnCellOffset = new Vector2Int(0, 1);
-            }
+        }
+
+        public int SelectSpawnIndex(int _SpawnCount, int _SpawnCountLimit)
+        {
+            if (_SpawnCountLimit <= 0)
+                return -1;
+
+            if (SelectionMode == MonsterSpawnSelectionMode.Random)
+                return UnityEngine.Random.Range(0, _SpawnCountLimit);
+
+            return Mathf.Abs(_SpawnCount) % _SpawnCountLimit;
         }
     }
 
@@ -736,6 +1173,7 @@ namespace IdleRPG.Runtime.Configuration
         public string PlayerDefeatedLog = "Player defeated. Restart the stage when ready.";
         public string DamageLogFormat = "{0} -> {1}: {2}{3}";
         public string CriticalSuffix = " CRIT";
+        public string FieldReadyLog = "Field mode ready. Move to an encounter point.";
 
         public string FormatMonsterName(string _BaseName, int _StageNumber)
         {
@@ -767,6 +1205,17 @@ namespace IdleRPG.Runtime.Configuration
             return MvpTextFormatter.Format(DamageLogFormat, _Attacker, _Target, _Damage, _IsCritical ? CriticalSuffix : string.Empty);
         }
 
+        public void EnsureDefaults()
+        {
+            StartStageNumber = Mathf.Max(1, StartStageNumber);
+            MonsterHpScalePerStage = Mathf.Max(0f, MonsterHpScalePerStage);
+            MonsterAttackScalePerStage = Mathf.Max(0f, MonsterAttackScalePerStage);
+            MonsterDefenseScalePerStage = Mathf.Max(0f, MonsterDefenseScalePerStage);
+            RewardScalePerStage = Mathf.Max(0f, RewardScalePerStage);
+            SpawnDelayAfterKill = Mathf.Max(0f, SpawnDelayAfterKill);
+            StageAdvanceDelay = Mathf.Max(0f, StageAdvanceDelay);
+        }
+
         public float GetHpMultiplier(int _StageNumber)
         {
             return 1f + Mathf.Max(0, _StageNumber - 1) * MonsterHpScalePerStage;
@@ -793,9 +1242,7 @@ namespace IdleRPG.Runtime.Configuration
         public static string Format(string _Format, params object[] _Args)
         {
             if (string.IsNullOrWhiteSpace(_Format))
-            {
                 return string.Empty;
-            }
 
             try
             {

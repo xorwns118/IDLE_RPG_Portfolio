@@ -12,6 +12,7 @@ namespace IdleRPG.Editor
     {
         private const string SampleScenePath = "Assets/Scenes/SampleScene.unity";
         private const string Week1ScenePath = "Assets/Scenes/Week1VerticalSlice.unity";
+        private const string DefaultActorAnimatorControllerPath = "Assets/IdleRPG/Animations/Default_Character.overrideController";
         private static bool Queued;
 
         static MvpSceneAutoLayout()
@@ -34,9 +35,7 @@ namespace IdleRPG.Editor
         private static void QueueRebuild()
         {
             if (Queued || EditorApplication.isPlaying || EditorApplication.isPlayingOrWillChangePlaymode)
-            {
                 return;
-            }
 
             Queued = true;
             EditorApplication.delayCall += RebuildLoadedMvpScenesAfterDelay;
@@ -52,9 +51,7 @@ namespace IdleRPG.Editor
             Queued = false;
 
             if (EditorApplication.isPlaying || EditorApplication.isPlayingOrWillChangePlaymode)
-            {
                 return;
-            }
 
             Scene activeScene = SceneManager.GetActiveScene();
             MvpSceneController[] controllers = Object.FindObjectsOfType<MvpSceneController>(true);
@@ -71,11 +68,10 @@ namespace IdleRPG.Editor
             foreach (MvpSceneController controller in controllers)
             {
                 if (controller == null)
-                {
                     continue;
-                }
 
                 controller.RebuildSceneLayout();
+                AssignDefaultActorAnimatorController(controller);
                 EditorUtility.SetDirty(controller);
                 EditorUtility.SetDirty(controller.gameObject);
                 EditorSceneManager.MarkSceneDirty(controller.gameObject.scene);
@@ -83,14 +79,25 @@ namespace IdleRPG.Editor
             }
 
             if (changedAnyScene)
-            {
                 EditorSceneManager.SaveOpenScenes();
-            }
         }
 
         private static bool IsMvpScene(string _Path)
         {
             return _Path == SampleScenePath || _Path == Week1ScenePath;
+        }
+
+        private static void AssignDefaultActorAnimatorController(MvpSceneController _Controller)
+        {
+            if (_Controller == null || _Controller.DesignerEditableSettings == null || _Controller.DesignerEditableSettings.Actors == null)
+                return;
+
+            if (_Controller.DesignerEditableSettings.Actors.AnimatorController != null)
+                return;
+
+            RuntimeAnimatorController animatorController = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(DefaultActorAnimatorControllerPath);
+            if (animatorController != null)
+                _Controller.DesignerEditableSettings.Actors.AnimatorController = animatorController;
         }
     }
 }

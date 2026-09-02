@@ -55,6 +55,22 @@ namespace IdleRPG.Runtime.Maps
             return CellToWorld(_Cell) + SettingsValue.ActorAnchorOffset;
         }
 
+        public Bounds GetWorldBounds()
+        {
+            if (SettingsValue == null)
+                return new Bounds(transform.position, Vector3.zero);
+
+            Bounds localBounds = SettingsValue.GetLocalBounds();
+            Vector3 min = localBounds.min;
+            Vector3 max = localBounds.max;
+            Bounds worldBounds = new Bounds(transform.TransformPoint(min), Vector3.zero);
+            worldBounds.Encapsulate(transform.TransformPoint(new Vector3(min.x, max.y, min.z)));
+            worldBounds.Encapsulate(transform.TransformPoint(new Vector3(max.x, min.y, min.z)));
+            worldBounds.Encapsulate(transform.TransformPoint(max));
+
+            return worldBounds;
+        }
+
         public Vector2Int WorldToCell(Vector3 _WorldPosition)
         {
             Vector3 localPosition = transform.InverseTransformPoint(_WorldPosition - SettingsValue.ActorAnchorOffset);
@@ -80,9 +96,7 @@ namespace IdleRPG.Runtime.Maps
         {
             Vector2Int origin = ClampCell(_Cell);
             if (IsWalkable(origin))
-            {
                 return origin;
-            }
 
             int maxDistance = SettingsValue.Columns + SettingsValue.Rows;
             for (int distance = 1; distance <= maxDistance; distance++)
@@ -93,9 +107,7 @@ namespace IdleRPG.Runtime.Maps
                     {
                         Vector2Int candidate = new Vector2Int(x, y);
                         if (GetCellDistance(origin, candidate) == distance && IsWalkable(candidate))
-                        {
                             return candidate;
-                        }
                     }
                 }
             }
@@ -105,7 +117,15 @@ namespace IdleRPG.Runtime.Maps
 
         public int GetAttackRangeInCells(float _AttackRange)
         {
-            return Mathf.Max(1, Mathf.CeilToInt(_AttackRange));
+            return GetAttackRangeInCells(_AttackRange, 0f);
+        }
+
+        public int GetAttackRangeInCells(float _AttackRange, float _AttackRangePadding)
+        {
+            Vector2 cellSize = SettingsValue.GetSafeCellSize();
+            float cellStep = Mathf.Max(0.01f, Mathf.Min(cellSize.x, cellSize.y));
+            float range = Mathf.Max(0.01f, _AttackRange + Mathf.Max(0f, _AttackRangePadding));
+            return Mathf.Max(1, Mathf.FloorToInt(range / cellStep));
         }
 
         public Vector2Int GetNextCellToward(Vector2Int _From, Vector2Int _Target, int _StopDistance)

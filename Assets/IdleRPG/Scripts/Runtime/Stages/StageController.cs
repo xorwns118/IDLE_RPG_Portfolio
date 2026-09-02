@@ -28,6 +28,7 @@ namespace IdleRPG.Runtime.Stages
             public Vector3 PlayerStartPosition = DefaultPlayerStartPosition;
             public MvpMonsterSpawnSettings SpawnSettings = new MvpMonsterSpawnSettings();
             public TileMapLayout TileMap;
+            public int StartStageNumberOverride;
         }
 
         private RuntimeContentDatabase Database;
@@ -47,6 +48,7 @@ namespace IdleRPG.Runtime.Stages
         private Vector3 PlayerStartPosition = DefaultPlayerStartPosition;
         private int CurrentStageNumberValue;
         private int KillsInStageValue;
+        private bool RealtimeCombatActive = true;
 
         public int CurrentStageNumber => CurrentStageNumberValue;
         public int KillsInStage => KillsInStageValue;
@@ -56,7 +58,9 @@ namespace IdleRPG.Runtime.Stages
         public string LastLog { get; private set; } = "Ready";
         public CombatActor Player => PlayerActor;
         public CombatActor ActiveMonster => ActiveMonsterActor;
+        public bool HasActiveStage => CurrentStageNumberValue > 0 && CurrentStage != null;
         public bool IsPlayerDefeated { get; private set; }
+        public bool IsRealtimeCombatActive => RealtimeCombatActive;
 
         public void Initialize(RuntimeSetup _Setup)
         {
@@ -78,6 +82,7 @@ namespace IdleRPG.Runtime.Stages
             ActorSettings.EnsureDefaults();
             SpawnSettings.EnsureDefaults();
             Context.SetTileMap(TileMap);
+            Context.ConfigureTargeting(ActorSettings.Targeting);
 
             Spawner = gameObject.GetComponent<MonsterSpawner>();
             if (Spawner == null)
@@ -87,7 +92,8 @@ namespace IdleRPG.Runtime.Stages
             Spawner.SetSpawnPoint(MonsterSpawnPoint);
             Spawner.SetTileMap(TileMap);
 
-            BeginStage(Mathf.Max(1, RuntimeSettings.StartStageNumber));
+            int startStageNumber = _Setup.StartStageNumberOverride > 0 ? _Setup.StartStageNumberOverride : RuntimeSettings.StartStageNumber;
+            BeginStage(Mathf.Max(1, startStageNumber));
         }
 
         public void RestartCurrentStage()
@@ -99,6 +105,34 @@ namespace IdleRPG.Runtime.Stages
             int restartStage = CurrentStageNumberValue > 0 ? CurrentStageNumberValue : Mathf.Max(1, RuntimeSettings.StartStageNumber);
             BeginStage(restartStage);
             LastLog = RuntimeSettings.FormatStageRestarted(CurrentStageNumberValue);
+        }
+
+        public void StartStage(int _StageNumber)
+        {
+            if (Database == null || Context == null || Factory == null)
+                return;
+
+            StopAllCoroutines();
+            BeginStage(Mathf.Max(1, _StageNumber));
+        }
+
+        public void ClearRuntime()
+        {
+            StopAllCoroutines();
+            ClearSpawnedMonsters();
+            ClearPlayerActor();
+            CurrentStage = null;
+            CurrentStageNumberValue = 0;
+            KillsInStageValue = 0;
+            IsPlayerDefeated = false;
+            LastLog = RuntimeSettings.FieldReadyLog;
+        }
+
+        public void SetRealtimeCombatActive(bool _Active)
+        {
+            RealtimeCombatActive = _Active;
+            ApplyRealtimeCombatActive(PlayerActor);
+            ApplyRealtimeCombatActive(ActiveMonsterActor);
         }
 
         private void PreparePlayerForStage()
@@ -122,6 +156,7 @@ namespace IdleRPG.Runtime.Stages
             PlayerActor.transform.position = PlayerStartPosition;
             PlayerActor.transform.rotation = Quaternion.identity;
             PlayerActor.SetTarget(null);
+            ApplyRealtimeCombatActive(PlayerActor);
             PlayerActor.Died += HandlePlayerDied;
             PlayerActor.DamageTaken += HandleDamageTaken;
         }
@@ -158,6 +193,17 @@ namespace IdleRPG.Runtime.Stages
 
             ActiveMonsterActor.Died += HandleMonsterDied;
             ActiveMonsterActor.DamageTaken += HandleDamageTaken;
+            ApplyRealtimeCombatActive(ActiveMonsterActor);
+        }
+
+        private void ApplyRealtimeCombatActive(CombatActor _Actor)
+        {
+            if (_Actor == null)
+                return;
+
+            AutoCombatController controller = _Actor.GetComponent<AutoCombatController>();
+            if (controller != null)
+                controller.SetRuntimeActive(RealtimeCombatActive);
         }
 
         private MonsterDefinition CreateScaledMonsterDefinition(MonsterDefinition _Definition, int _StageNumber)
@@ -254,6 +300,22 @@ namespace IdleRPG.Runtime.Stages
                 Context.Unregister(actor);
                 DestroyActorObject(actor.gameObject);
             }
+        }
+
+        private void ClearPlayerActor()
+        {
+            if (PlayerActor == null)
+                return;
+
+            PlayerActor.Died -= HandlePlayerDied;
+            PlayerActor.DamageTaken -= HandleDamageTaken;
+            PlayerActor.SetTarget(null);
+
+            if (Context != null)
+                Context.Unregister(PlayerActor);
+
+            DestroyActorObject(PlayerActor.gameObject);
+            PlayerActor = null;
         }
 
         private static void DestroyActorObject(GameObject _ActorObject)

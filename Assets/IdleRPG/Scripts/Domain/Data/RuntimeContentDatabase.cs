@@ -17,9 +17,7 @@ namespace IdleRPG.Domain.Data
             foreach (MonsterDefinition monster in _Monsters)
             {
                 if (MonstersById.ContainsKey(monster.Id))
-                {
                     throw new InvalidOperationException("Duplicate monster id: " + monster.Id);
-                }
 
                 MonstersById.Add(monster.Id, monster);
             }

@@ -44,15 +44,16 @@ namespace IdleRPG.Runtime.Bootstrap
             Application.targetFrameRate = 60;
             MvpGameContentSettings contentSettings = MvpGameContentSettings.CreateDefault();
             MvpSceneDesignerSettings designerSettings = MvpSceneDesignerSettings.CreateDefault();
+            designerSettings.EnsureDefaults();
 
-            Camera camera = EnsureCamera(designerSettings.Camera);
             Sprite unitSprite = GeneratedSpriteFactory.CreateUnitSprite();
             Sprite tileSprite = GeneratedSpriteFactory.CreateSquareTileSprite();
             TileMapLayout tileMap = CreateMap(tileSprite, designerSettings.World);
+            EnsureCamera(designerSettings.Camera, tileMap);
             Transform monsterSpawnPoint = CreateSpawnPoint(tileMap, designerSettings.World);
 
             BattleContext context = gameObject.AddComponent<BattleContext>();
-            ActorFactory actorFactory = new ActorFactory(unitSprite, designerSettings.Actors);
+            ActorFactory actorFactory = new ActorFactory(unitSprite, designerSettings.Actors, designerSettings.CombatLoop.Mode);
 
             StageController stageController = gameObject.AddComponent<StageController>();
             stageController.Initialize(new StageController.RuntimeSetup
@@ -73,11 +74,9 @@ namespace IdleRPG.Runtime.Bootstrap
 
             CombatHud hud = gameObject.AddComponent<CombatHud>();
             hud.Initialize(stageController, context);
-
-            camera.transform.position = designerSettings.Camera.Position;
         }
 
-        private static Camera EnsureCamera(MvpCameraSettings _Settings)
+        private static Camera EnsureCamera(MvpCameraSettings _Settings, TileMapLayout _TileMap)
         {
             Camera camera = Camera.main;
             if (camera == null)
@@ -88,10 +87,30 @@ namespace IdleRPG.Runtime.Bootstrap
             }
 
             camera.orthographic = true;
-            camera.orthographicSize = _Settings.OrthographicSize;
+            camera.orthographicSize = GetCameraOrthographicSize(camera, _Settings, _TileMap);
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = _Settings.BackgroundColor;
+            camera.transform.position = GetCameraPosition(_Settings, _TileMap);
             return camera;
+        }
+
+        private static Vector3 GetCameraPosition(MvpCameraSettings _Settings, TileMapLayout _TileMap)
+        {
+            if (_Settings.AutoFitTileMap && _TileMap != null && _TileMap.IsEnabled)
+            {
+                Bounds mapBounds = _TileMap.GetWorldBounds();
+                return new Vector3(mapBounds.center.x, mapBounds.center.y, _Settings.Position.z);
+            }
+
+            return _Settings.Position;
+        }
+
+        private static float GetCameraOrthographicSize(Camera _Camera, MvpCameraSettings _Settings, TileMapLayout _TileMap)
+        {
+            if (_Settings.AutoFitTileMap && _TileMap != null && _TileMap.IsEnabled)
+                return _Settings.CalculateTileMapOrthographicSize(_TileMap.Settings, _Camera.aspect);
+
+            return _Settings.OrthographicSize;
         }
 
         private static TileMapLayout CreateMap(Sprite _TileSprite, MvpWorldLayoutSettings _Settings)
@@ -121,7 +140,7 @@ namespace IdleRPG.Runtime.Bootstrap
         {
             GameObject spawnPoint = new GameObject("Monster Spawn Point");
             spawnPoint.transform.position = _TileMap != null
-                ? _TileMap.CellToActorWorld(_Settings.TileMap.MonsterSpawnCell)
+                ? _TileMap.CellToActorWorld(_Settings.TileMap.GetPrimaryMonsterSpawnCell())
                 : _Settings.MonsterSpawnPosition;
             return spawnPoint.transform;
         }

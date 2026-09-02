@@ -69,6 +69,7 @@ namespace IdleRPG.Editor
             DrawSpritePalette(tileMapSettings);
             DrawCellGrid(tileMapSettings);
             DrawSelectedCellTools(tileMapSettings);
+            DrawMonsterSpawnList(tileMapSettings);
             DrawVisualSettings(tileMapSettings);
             DrawOverrideList(tileMapSettings);
             DrawSceneActions();
@@ -96,7 +97,6 @@ namespace IdleRPG.Editor
             {
                 if (GUILayout.Button("Create MVP Scene Controller", GUILayout.Height(30f)))
                     CreateController();
-
             }
         }
 
@@ -111,7 +111,7 @@ namespace IdleRPG.Editor
             Vector3 origin = _Settings.Origin;
             Vector3 actorAnchorOffset = _Settings.ActorAnchorOffset;
             Vector2Int playerStartCell = _Settings.PlayerStartCell;
-            Vector2Int monsterSpawnCell = _Settings.MonsterSpawnCell;
+            Vector2Int primaryMonsterSpawnCell = _Settings.GetPrimaryMonsterSpawnCell();
 
             EditorGUI.BeginChangeCheck();
             enabled = EditorGUILayout.Toggle("Enabled", enabled);
@@ -121,7 +121,7 @@ namespace IdleRPG.Editor
             origin = EditorGUILayout.Vector3Field("Origin", origin);
             actorAnchorOffset = EditorGUILayout.Vector3Field("Actor Anchor Offset", actorAnchorOffset);
             playerStartCell = EditorGUILayout.Vector2IntField("Player Start Cell", playerStartCell);
-            monsterSpawnCell = EditorGUILayout.Vector2IntField("Monster Spawn Cell", monsterSpawnCell);
+            primaryMonsterSpawnCell = EditorGUILayout.Vector2IntField("Primary Monster Spawn Cell", primaryMonsterSpawnCell);
 
             if (EditorGUI.EndChangeCheck())
             {
@@ -134,7 +134,7 @@ namespace IdleRPG.Editor
                     _TileMapSettings.Origin = origin;
                     _TileMapSettings.ActorAnchorOffset = actorAnchorOffset;
                     _TileMapSettings.PlayerStartCell = playerStartCell;
-                    _TileMapSettings.MonsterSpawnCell = monsterSpawnCell;
+                    _TileMapSettings.SetPrimaryMonsterSpawnCell(primaryMonsterSpawnCell);
                 });
             }
 
@@ -257,7 +257,7 @@ namespace IdleRPG.Editor
         private void DrawSelectedCellTools(MvpTileMapSettings _Settings)
         {
             bool isPlayerStart = SelectedCell == _Settings.PlayerStartCell;
-            bool isMonsterSpawn = SelectedCell == _Settings.MonsterSpawnCell;
+            bool isMonsterSpawn = _Settings.IsMonsterSpawnCell(SelectedCell);
             bool isReservedCell = isPlayerStart || isMonsterSpawn;
 
             EditorGUILayout.LabelField("Selected Cell Tools", EditorStyles.boldLabel);
@@ -266,46 +266,79 @@ namespace IdleRPG.Editor
 
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("Set Player Start"))
-            {
                 ApplyChange("Set Player Start Cell", _TileMapSettings => _TileMapSettings.PlayerStartCell = SelectedCell);
+
+            if (GUILayout.Button("Set Primary Monster Spawn"))
+                ApplyChange("Set Primary Monster Spawn Cell", _TileMapSettings => _TileMapSettings.SetPrimaryMonsterSpawnCell(SelectedCell));
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            using (new EditorGUI.DisabledScope(isMonsterSpawn))
+            {
+                if (GUILayout.Button("Add Monster Spawn"))
+                    ApplyChange("Add Monster Spawn Cell", _TileMapSettings => _TileMapSettings.AddMonsterSpawnCell(SelectedCell));
             }
 
-            if (GUILayout.Button("Set Monster Spawn"))
+            using (new EditorGUI.DisabledScope(!isMonsterSpawn || _Settings.MonsterSpawnCellCount <= 1))
             {
-                ApplyChange("Set Monster Spawn Cell", _TileMapSettings => _TileMapSettings.MonsterSpawnCell = SelectedCell);
+                if (GUILayout.Button("Remove Monster Spawn"))
+                    ApplyChange("Remove Monster Spawn Cell", _TileMapSettings => _TileMapSettings.RemoveMonsterSpawnCell(SelectedCell));
             }
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("Paint Brush"))
-            {
                 ApplyChange("Paint Tile Visual", _TileMapSettings => _TileMapSettings.PaintTileVisual(SelectedCell, SelectedVisualKind));
-            }
 
             using (new EditorGUI.DisabledScope(isReservedCell))
             {
                 if (GUILayout.Button("Block Selected"))
-                {
                     ApplyChange("Block Tile Cell", _TileMapSettings => _TileMapSettings.SetTileKind(SelectedCell, TileKind.Blocked));
-                }
             }
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("Set Walkable"))
-            {
                 ApplyChange("Set Walkable Tile Cell", _TileMapSettings => _TileMapSettings.SetTileKind(SelectedCell, TileKind.Walkable));
-            }
 
             if (GUILayout.Button("Clear Selected"))
-            {
                 ApplyChange("Clear Tile Cell", _TileMapSettings => _TileMapSettings.SetCell(SelectedCell, TileKind.Walkable, _TileMapSettings.DefaultVisualKind));
-            }
             EditorGUILayout.EndHorizontal();
 
             if (isReservedCell)
-            {
                 EditorGUILayout.HelpBox("Player Start and Monster Spawn cells always stay walkable.", MessageType.Info);
+
+            EditorGUILayout.Space(10f);
+        }
+
+        private void DrawMonsterSpawnList(MvpTileMapSettings _Settings)
+        {
+            EditorGUILayout.LabelField("Monster Spawn Cells", EditorStyles.boldLabel);
+
+            Vector2Int[] spawnCells = _Settings.GetMonsterSpawnCells();
+            for (int i = 0; i < spawnCells.Length; i++)
+            {
+                Vector2Int cell = spawnCells[i];
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField(i == 0 ? "Primary" : "Spawn " + (i + 1), GUILayout.Width(72f));
+                EditorGUILayout.LabelField(cell.x + ", " + cell.y, GUILayout.Width(62f));
+                if (GUILayout.Button("Select"))
+                {
+                    SelectedCell = cell;
+                    GUI.FocusControl(null);
+                }
+
+                using (new EditorGUI.DisabledScope(spawnCells.Length <= 1))
+                {
+                    if (GUILayout.Button("Remove"))
+                    {
+                        ApplyChange("Remove Monster Spawn Cell", _TileMapSettings => _TileMapSettings.RemoveMonsterSpawnCell(cell));
+                        EditorGUILayout.EndHorizontal();
+                        break;
+                    }
+                }
+
+                EditorGUILayout.EndHorizontal();
             }
 
             EditorGUILayout.Space(10f);
@@ -501,7 +534,7 @@ namespace IdleRPG.Editor
         private static string GetCellLabel(MvpTileMapSettings _Settings, Vector2Int _Cell)
         {
             bool isPlayerStart = _Cell == _Settings.PlayerStartCell;
-            bool isMonsterSpawn = _Cell == _Settings.MonsterSpawnCell;
+            bool isMonsterSpawn = _Settings.IsMonsterSpawnCell(_Cell);
             if (isPlayerStart && isMonsterSpawn)
                 return "PM";
 

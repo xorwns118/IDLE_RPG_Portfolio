@@ -28,38 +28,28 @@ namespace IdleRPG.Runtime.Configuration
         public void EnsureDefaults()
         {
             if (Player == null)
-            {
                 Player = MvpPlayerContentSettings.CreateDefault();
-            }
 
             Player.EnsureDefaults();
 
             if (Monsters == null || Monsters.Length == 0)
-            {
                 Monsters = CreateDefaultMonsters();
-            }
 
             for (int i = 0; i < Monsters.Length; i++)
             {
                 if (Monsters[i] == null)
-                {
                     Monsters[i] = MvpMonsterContentSettings.CreateDefault(i);
-                }
 
                 Monsters[i].EnsureDefaults(i);
             }
 
             if (Stages == null || Stages.Length == 0)
-            {
                 Stages = CreateDefaultStages();
-            }
 
             for (int i = 0; i < Stages.Length; i++)
             {
                 if (Stages[i] == null)
-                {
                     Stages[i] = MvpStageContentSettings.CreateDefault(i);
-                }
 
                 Stages[i].EnsureDefaults(i, Monsters);
             }
@@ -100,9 +90,7 @@ namespace IdleRPG.Runtime.Configuration
             foreach (MvpStageContentSettings stage in Stages)
             {
                 if (stage.StageNumber == _StageNumber)
-                {
                     return Mathf.Max(1, stage.RequiredKills);
-                }
             }
 
             return Stages[Stages.Length - 1].RequiredKills;
@@ -115,9 +103,7 @@ namespace IdleRPG.Runtime.Configuration
             foreach (MvpMonsterContentSettings monster in Monsters)
             {
                 if (monster != null && monster.Id == _MonsterId)
-                {
                     return monster.WorldColor;
-                }
             }
 
             return _FallbackColor;
@@ -166,19 +152,13 @@ namespace IdleRPG.Runtime.Configuration
         public void EnsureDefaults()
         {
             if (string.IsNullOrWhiteSpace(Id))
-            {
                 Id = "player.hero";
-            }
 
             if (string.IsNullOrWhiteSpace(DisplayName))
-            {
                 DisplayName = Id;
-            }
 
             if (Stats == null)
-            {
                 Stats = MvpStatBlockSettings.Create(140f, 16f, 3f, 1.05f, 0.7f, 2.35f, 0.15f, 1.5f);
-            }
         }
 
         public PlayerDefinition ToDefinition()
@@ -214,14 +194,10 @@ namespace IdleRPG.Runtime.Configuration
         public static MvpMonsterContentSettings CreateDefault(int _Index)
         {
             if (_Index == 1)
-            {
                 return CreateGoblin();
-            }
 
             if (_Index == 2)
-            {
                 return CreateTrainingKnight();
-            }
 
             return CreateSlime();
         }
@@ -260,19 +236,13 @@ namespace IdleRPG.Runtime.Configuration
         public void EnsureDefaults(int _Index)
         {
             if (string.IsNullOrWhiteSpace(Id))
-            {
                 Id = "monster.custom." + (_Index + 1);
-            }
 
             if (string.IsNullOrWhiteSpace(DisplayName))
-            {
                 DisplayName = Id;
-            }
 
             if (Stats == null)
-            {
                 Stats = MvpStatBlockSettings.Create(32f, 5f, 0f, 0.85f, 1.25f, 1.2f, 0.02f, 1.25f);
-            }
         }
 
         public MonsterDefinition ToDefinition()

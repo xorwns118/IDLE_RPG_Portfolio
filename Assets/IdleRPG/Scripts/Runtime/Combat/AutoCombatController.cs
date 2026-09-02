@@ -9,7 +9,7 @@ using UnityEngine;
 namespace IdleRPG.Runtime.Combat
 {
     [RequireComponent(typeof(CombatActor))]
-    public sealed class AutoCombatController : MonoBehaviour
+    public sealed class AutoCombatController : MonoBehaviour, ICombatLoop
     {
         private CombatActor Actor;
         private BattleContext Context;
@@ -17,6 +17,10 @@ namespace IdleRPG.Runtime.Combat
         private HealthBarView HealthBar;
         private MeshRenderer NameLabelRenderer;
         private float AttackTimer;
+        private bool RuntimeActive = true;
+
+        public CombatLoopMode Mode => CombatLoopMode.Realtime;
+        public bool IsRuntimeActive => RuntimeActive && Settings.Enabled;
 
         public void Initialize(BattleContext _Context)
         {
@@ -32,7 +36,15 @@ namespace IdleRPG.Runtime.Combat
             HealthBar = GetComponent<HealthBarView>();
             NameLabelRenderer = ResolveNameLabelRenderer();
             AttackTimer = Random.Range(Settings.InitialAttackDelayMin, Settings.ClampInitialDelayMax());
+            RuntimeActive = Settings.Enabled;
+            enabled = IsRuntimeActive;
             ApplyTileSorting(Context != null ? Context.TileMap : null);
+        }
+
+        public void SetRuntimeActive(bool _Active)
+        {
+            RuntimeActive = _Active;
+            enabled = IsRuntimeActive;
         }
 
         private void Awake()
@@ -44,12 +56,12 @@ namespace IdleRPG.Runtime.Combat
 
         private void Update()
         {
-            if (Context == null || Actor == null || !Actor.IsAlive)
+            if (Context == null || Actor == null || !Actor.IsAlive || !IsRuntimeActive)
                 return;
 
             AttackTimer -= Time.deltaTime;
 
-            CombatActor target = Context.FindNearestEnemy(Actor);
+            CombatActor target = Context.FindTarget(Actor);
             Actor.SetTarget(target);
             TileMapLayout tileMap = Context.TileMap;
             ApplyTileSorting(tileMap);
@@ -57,6 +69,7 @@ namespace IdleRPG.Runtime.Combat
             if (target == null)
             {
                 Actor.Model.SetState(ActorState.Search);
+                Actor.PlayIdleAnimation();
                 return;
             }
 
@@ -66,10 +79,14 @@ namespace IdleRPG.Runtime.Combat
                 return;
             }
 
-            float distance = Vector2.Distance(transform.position, target.transform.position);
-            if (distance > Actor.Model.Stats.AttackRange)
+            if (!CombatRangePolicy.IsInsideAttackRange(Actor, target, Context.Targeting.AttackRangePadding))
             {
-                MoveToward(target.transform.position, target.transform.position);
+                Vector3 approachPosition = CombatRangePolicy.GetApproachPosition(
+                    transform.position,
+                    target.transform.position,
+                    Actor.Model.Stats.AttackRange,
+                    Context.Targeting.AttackRangePadding);
+                MoveToward(approachPosition, target.transform.position);
                 return;
             }
 
@@ -80,7 +97,7 @@ namespace IdleRPG.Runtime.Combat
         {
             Vector2Int actorCell = _TileMap.WorldToCell(transform.position);
             Vector2Int targetCell = _TileMap.WorldToCell(_Target.transform.position);
-            int attackRange = _TileMap.GetAttackRangeInCells(Actor.Model.Stats.AttackRange);
+            int attackRange = _TileMap.GetAttackRangeInCells(Actor.Model.Stats.AttackRange, Context.Targeting.AttackRangePadding);
             int distance = _TileMap.GetCellDistance(actorCell, targetCell);
 
             if (distance > attackRange)
@@ -98,21 +115,23 @@ namespace IdleRPG.Runtime.Combat
         {
             Actor.Model.SetState(ActorState.Move);
             Actor.Face(_FacingPoint);
+            Vector3 previousPosition = transform.position;
             transform.position = Vector3.MoveTowards(
                 transform.position,
                 _MoveTarget,
                 Actor.Model.Stats.MoveSpeed * Time.deltaTime);
 
             if (Vector3.Distance(transform.position, _MoveTarget) <= Settings.TileArrivalThreshold)
-            {
                 transform.position = _MoveTarget;
-            }
+
+            Actor.PlayMovementAnimation(transform.position - previousPosition, _FacingPoint);
         }
 
         private void Attack(CombatActor _Target)
         {
             Actor.Model.SetState(ActorState.Attack);
             Actor.Face(_Target.transform.position);
+            Actor.PlayIdleAnimation();
 
             if (AttackTimer <= 0f)
             {
@@ -124,23 +143,17 @@ namespace IdleRPG.Runtime.Combat
         private void ApplyTileSorting(TileMapLayout _TileMap)
         {
             if (_TileMap == null || !_TileMap.IsEnabled || Actor == null)
-            {
                 return;
-            }
 
             int actorSortingOrder = _TileMap.GetActorSortingOrder(transform.position, Actor.SortingOrder);
             Actor.SetSortingOrder(actorSortingOrder);
 
             int overlaySortingOrder = _TileMap.GetOverlaySortingOrder(actorSortingOrder);
             if (HealthBar != null)
-            {
                 HealthBar.SetSortingBase(overlaySortingOrder);
-            }
 
             if (NameLabelRenderer != null)
-            {
                 NameLabelRenderer.sortingOrder = overlaySortingOrder + 2;
-            }
         }
 
         private MeshRenderer ResolveNameLabelRenderer()
