@@ -2,6 +2,9 @@
 using System;
 using IdleRPG.Domain;
 using IdleRPG.Domain.Actors;
+using IdleRPG.Domain.Combat;
+using IdleRPG.Domain.Data;
+using IdleRPG.Domain.Skills;
 using IdleRPG.Runtime.Actors;
 using IdleRPG.Runtime.Bootstrap;
 using IdleRPG.Runtime.Combat;
@@ -113,8 +116,19 @@ namespace IdleRPG.Editor
         {
             SerializedProperty gameContent = RequireProperty(_SerializedObject, "GameContent");
             Require(gameContent.FindPropertyRelative("Player") != null, "GameContent needs Player settings.");
+            Require(gameContent.FindPropertyRelative("Skills") != null, "GameContent needs Skills settings.");
             Require(gameContent.FindPropertyRelative("Monsters") != null, "GameContent needs Monsters settings.");
             Require(gameContent.FindPropertyRelative("Stages") != null, "GameContent needs Stages settings.");
+
+            SerializedProperty playerContent = gameContent.FindPropertyRelative("Player");
+            Require(playerContent.FindPropertyRelative("SkillLoadout") != null, "Player settings need Skill Loadout.");
+            SerializedProperty monstersContent = gameContent.FindPropertyRelative("Monsters");
+            Require(monstersContent.isArray, "Monster settings should be an array.");
+            if (monstersContent.arraySize > 0)
+            {
+                SerializedProperty firstMonster = monstersContent.GetArrayElementAtIndex(0);
+                Require(firstMonster.FindPropertyRelative("SkillLoadout") != null, "Monster settings need Skill Loadout.");
+            }
 
             SerializedProperty designerSettings = RequireProperty(_SerializedObject, "DesignerSettings");
             SerializedProperty cameraSettings = designerSettings.FindPropertyRelative("Camera");
@@ -303,6 +317,7 @@ namespace IdleRPG.Editor
                 Require(designerSettings.CombatLoop.Mode == CombatLoopMode.Realtime, "Realtime combat should be the default MVP combat loop.");
                 RequireStateAndStatModifier();
                 RequireAnimationFacingPolicy();
+                RequireSkillSystem();
 
                 ActorFactory factory = new ActorFactory(GeneratedSpriteFactory.CreateUnitSprite(), designerSettings.Actors, designerSettings.CombatLoop.Mode);
                 stage.Initialize(new StageController.RuntimeSetup
@@ -325,6 +340,8 @@ namespace IdleRPG.Editor
                 Require(stage.Player.Model.DisplayName == "Training Hero", "Player display name was not assigned.");
                 Require(stage.Player.gameObject.name == "Training Hero", "Runtime player object was not created from the Hero model.");
                 Require(stage.ActiveMonster.Model.DisplayName == "Slime S1", "Monster display name was not assigned.");
+                Require(stage.Player.Model.SkillLoadout.HasAnySkill, "Player did not receive a skill loadout.");
+                Require(stage.ActiveMonster.Model.SkillLoadout.HasAnySkill, "Monster did not receive a skill loadout.");
                 RequireNameLabel(stage.Player.transform, "Training Hero");
                 RequireNameLabel(stage.ActiveMonster.transform, "Slime S1");
                 Require(stage.CurrentStageNumber == 1, "StageController did not start at stage 1.");
@@ -409,6 +426,107 @@ namespace IdleRPG.Editor
             actor.ClearStatModifier();
             Require(actor.State == ActorState.Idle, "Actor state machine did not reset on restore.");
             Require(Mathf.Approximately(actor.Stats.MaxHp, 100f), "Stat modifier did not clear.");
+        }
+
+        private static void RequireSkillSystem()
+        {
+            RuntimeContentDatabase database = MvpGameContentSettings.CreateDefault().CreateDatabase();
+            Require(database.Skills.Count >= 3, "Default content should include skill definitions.");
+            Require(database.Player.SkillLoadout.Count >= 2, "Default player should include a skill loadout.");
+            Require(database.Player.SkillLoadout.Count <= SkillLoadout.MaxSlots, "Player loadout exceeded four skill slots.");
+            Require(database.GetMonster("monster.slime").SkillLoadout.Count >= 1, "Default monster should include a skill loadout.");
+
+            SkillDefinition damageSkill = database.GetSkill("skill.hero.power_strike");
+            SkillDefinition buffSkill = database.GetSkill("skill.hero.battle_focus");
+            SkillDefinition monsterSkill = database.GetSkill("skill.monster.bite");
+            SkillLoadout clippedLoadout = new SkillLoadout(new[]
+            {
+                damageSkill,
+                buffSkill,
+                monsterSkill,
+                damageSkill,
+                buffSkill
+            });
+            Require(clippedLoadout.Slots.Count == SkillLoadout.MaxSlots, "Skill loadout should expose four slots.");
+            Require(clippedLoadout.FilledSlotCount == SkillLoadout.MaxSlots, "Skill loadout did not clamp to four filled slots.");
+
+            ActorModel caster = new ActorModel(
+                "skill.caster",
+                "Skill Caster",
+                ActorTeam.Player,
+                new StatBlock(100f, 10f, 0f, 1f, 1f, 1f, 0f, 1f));
+            ActorModel target = new ActorModel(
+                "skill.target",
+                "Skill Target",
+                ActorTeam.Monster,
+                new StatBlock(100f, 5f, 0f, 1f, 1f, 1f, 0f, 1f));
+            SkillExecutor executor = new SkillExecutor();
+            ISkillExecutor modelExecutor = executor;
+
+            SkillRuntime damageRuntime = new SkillRuntime(damageSkill);
+            float targetHpBefore = target.CurrentHp;
+            SkillExecutionResult damageResult = modelExecutor.Execute(damageRuntime, caster, target, damageSkill.Range, 1f);
+            Require(damageResult.Succeeded, "Damage skill did not execute.");
+            Require(target.CurrentHp < targetHpBefore, "Damage skill did not reduce target HP.");
+            Require(!damageRuntime.IsReady, "Damage skill did not start cooldown.");
+            damageRuntime.Tick(damageSkill.CooldownSeconds);
+            Require(damageRuntime.IsReady, "Damage skill cooldown did not recover.");
+
+            SkillRuntime buffRuntime = new SkillRuntime(buffSkill);
+            float attackBefore = caster.Stats.AttackPower;
+            SkillExecutionResult buffResult = modelExecutor.Execute(buffRuntime, caster, target, buffSkill.Range, 1f);
+            Require(buffResult.Succeeded, "Buff skill did not execute.");
+            Require(caster.Stats.AttackPower > attackBefore, "Buff skill did not increase caster Attack Power.");
+            caster.Tick(buffSkill.Effects[0].DurationSeconds + 0.1f);
+            Require(Mathf.Approximately(caster.Stats.AttackPower, attackBefore), "Buff skill did not expire.");
+
+            RequireRuntimeSkillEvent(damageSkill);
+        }
+
+        private static void RequireRuntimeSkillEvent(SkillDefinition _Skill)
+        {
+            GameObject root = new GameObject("Runtime Skill Smoke Root");
+            try
+            {
+                Sprite sprite = GeneratedSpriteFactory.CreateUnitSprite();
+                GameObject casterObject = CreateSmokeChild(root.transform, "Runtime Skill Caster");
+                casterObject.AddComponent<SpriteRenderer>();
+                CombatActor caster = casterObject.AddComponent<CombatActor>();
+                ActorModel casterModel = new ActorModel(
+                    "runtime.skill.caster",
+                    "Runtime Skill Caster",
+                    ActorTeam.Player,
+                    new StatBlock(100f, 10f, 0f, 1f, 1f, 1f, 0f, 1f));
+                casterModel.SetSkillLoadout(new SkillLoadout(new[] { _Skill }));
+                caster.Initialize(casterModel, sprite, Color.white);
+
+                GameObject targetObject = CreateSmokeChild(root.transform, "Runtime Skill Target");
+                targetObject.transform.position = Vector3.right * 0.5f;
+                targetObject.AddComponent<SpriteRenderer>();
+                CombatActor target = targetObject.AddComponent<CombatActor>();
+                ActorModel targetModel = new ActorModel(
+                    "runtime.skill.target",
+                    "Runtime Skill Target",
+                    ActorTeam.Monster,
+                    new StatBlock(100f, 5f, 0f, 1f, 1f, 1f, 0f, 1f));
+                target.Initialize(targetModel, sprite, Color.white);
+
+                bool damageEventRaised = false;
+                target.DamageTaken += (_Target, _Attacker, _Result) =>
+                {
+                    damageEventRaised = _Target == target && _Attacker == caster && _Result.FinalDamage > 0f;
+                };
+
+                SkillExecutor executor = new SkillExecutor();
+                Require(
+                    executor.TryExecuteBestSkill(caster, target, 0.5f, 1f, out SkillExecutionResult result) && result.Succeeded,
+                    "Runtime SkillExecutor did not execute the ready skill.");
+                Require(damageEventRaised, "Runtime skill damage did not raise DamageTaken.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(root);
+            }
         }
 
         private static void RequireAnimationFacingPolicy()

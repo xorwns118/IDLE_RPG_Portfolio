@@ -1,5 +1,6 @@
 using IdleRPG.Domain;
 using IdleRPG.Domain.Actors;
+using IdleRPG.Domain.Combat;
 using IdleRPG.Runtime.Actors;
 using IdleRPG.Runtime.Configuration;
 using IdleRPG.Runtime.Maps;
@@ -16,6 +17,7 @@ namespace IdleRPG.Runtime.Combat
         private MvpAutoCombatSettings Settings = new MvpAutoCombatSettings();
         private HealthBarView HealthBar;
         private MeshRenderer NameLabelRenderer;
+        private readonly SkillExecutor Skills = new SkillExecutor();
         private float AttackTimer;
         private bool RuntimeActive = true;
 
@@ -59,6 +61,7 @@ namespace IdleRPG.Runtime.Combat
             if (Context == null || Actor == null || !Actor.IsAlive || !IsRuntimeActive)
                 return;
 
+            Actor.Model.Tick(Time.deltaTime);
             AttackTimer -= Time.deltaTime;
 
             CombatActor target = Context.FindTarget(Actor);
@@ -72,6 +75,9 @@ namespace IdleRPG.Runtime.Combat
                 Actor.PlayIdleAnimation();
                 return;
             }
+
+            if (TryUseSkill(target))
+                return;
 
             if (tileMap != null && tileMap.IsEnabled && Settings.UseTileMovement)
             {
@@ -109,6 +115,16 @@ namespace IdleRPG.Runtime.Combat
             }
 
             Attack(_Target);
+        }
+
+        private bool TryUseSkill(CombatActor _Target)
+        {
+            float distance = Vector2.Distance(transform.position, _Target.transform.position);
+            if (!Skills.TryExecuteBestSkill(Actor, _Target, distance, Random.value, out SkillExecutionResult result))
+                return false;
+
+            AttackTimer = Actor.Model.Stats.AttackInterval;
+            return result.Succeeded;
         }
 
         private void MoveToward(Vector3 _MoveTarget, Vector3 _FacingPoint)

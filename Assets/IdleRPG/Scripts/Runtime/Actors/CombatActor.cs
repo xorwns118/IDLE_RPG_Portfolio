@@ -68,6 +68,16 @@ namespace IdleRPG.Runtime.Actors
             return result;
         }
 
+        public DamageResult TakeSkillAttack(CombatActor _Attacker, float _PowerMultiplier, float _CriticalRoll)
+        {
+            if (!IsAlive || _Attacker == null || _Attacker.Model == null)
+                return DamageResult.None;
+
+            DamageResult result = Model.ReceiveSkillAttack(_Attacker.Model.Stats, _PowerMultiplier, _CriticalRoll);
+            DamageTaken?.Invoke(this, _Attacker, result);
+            return result;
+        }
+
         public void Face(Vector3 _Point)
         {
             if (ActorSpriteRenderer != null)

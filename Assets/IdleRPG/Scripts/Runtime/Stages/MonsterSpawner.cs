@@ -1,6 +1,7 @@
 using IdleRPG.Domain;
 using IdleRPG.Domain.Actors;
 using IdleRPG.Domain.Data;
+using IdleRPG.Domain.Skills;
 using IdleRPG.Runtime.Actors;
 using IdleRPG.Runtime.Combat;
 using IdleRPG.Runtime.Configuration;
@@ -53,6 +54,7 @@ namespace IdleRPG.Runtime.Stages
                 _DisplayName,
                 ActorTeam.Monster,
                 _Definition.Stats);
+            model.SetSkillLoadout(new SkillLoadout(_Definition.SkillLoadout));
 
             Vector3 position = ResolveSpawnPosition();
             SpawnCount++;

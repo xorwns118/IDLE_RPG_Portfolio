@@ -66,6 +66,16 @@ namespace IdleRPG.Runtime.Combat
             return TargetSelector.SelectTarget(_Requester, RegisteredActors, TargetingSettings);
         }
 
+        public void TickActors(float _DeltaSeconds)
+        {
+            for (int i = RegisteredActors.Count - 1; i >= 0; i--)
+            {
+                CombatActor actor = RegisteredActors[i];
+                if (actor != null && actor.Model != null)
+                    actor.Model.Tick(_DeltaSeconds);
+            }
+        }
+
         private void HandleActorDied(CombatActor _Actor)
         {
             if (_Actor != null && _Actor.Team != ActorTeam.Player)

@@ -1,6 +1,6 @@
 # Script Role Guide
 
-최종 갱신일: 2026-08-31
+최종 갱신일: 2026-09-02
 
 이 문서는 `Assets/IdleRPG/Scripts` 아래 각 스크립트가 어떤 책임을 갖는지 빠르게 읽기 위한 가이드다.
 
@@ -11,13 +11,18 @@
 1. `Domain/GlobalEnums.cs`
 2. `Domain/Actors/StatBlock.cs`
 3. `Domain/Actors/ActorModel.cs`
-4. `Runtime/Bootstrap/MvpSceneController.cs`
-5. `Runtime/Stages/StageController.cs`
-6. `Runtime/Combat/BattleContext.cs`
-7. `Runtime/Combat/AutoCombatController.cs`
-8. `Runtime/Combat/TurnBasedAutoBattleController.cs`
-9. `Runtime/Configuration/MvpSceneDesignerSettings.cs`
-10. `Editor/MvpSceneSmokeTest.cs`
+4. `Domain/Skills/SkillDefinition.cs`
+5. `Domain/Skills/SkillRuntime.cs`
+6. `Domain/Skills/SkillLoadout.cs`
+7. `Runtime/Configuration/MvpGameContentSettings.cs`
+8. `Runtime/Combat/SkillExecutor.cs`
+9. `Runtime/Bootstrap/MvpSceneController.cs`
+10. `Runtime/Stages/StageController.cs`
+11. `Runtime/Combat/BattleContext.cs`
+12. `Runtime/Combat/AutoCombatController.cs`
+13. `Runtime/Combat/TurnBasedAutoBattleController.cs`
+14. `Runtime/Configuration/MvpSceneDesignerSettings.cs`
+15. `Editor/MvpSceneSmokeTest.cs`
 
 ## Domain
 
@@ -35,6 +40,9 @@ Unity `GameObject`나 `MonoBehaviour`에 의존하지 않는 순수 게임 규�
 - `CombatLoopMode`: Realtime, TurnBased 전투 루프 선택
 - `StageFlowMode`: Field, Battle 진행 모드
 - `EncounterTriggerMode`: Manual, Distance 조우 트리거
+- `MonsterSpawnSelectionMode`: 여러 스폰 위치를 순차/랜덤 중 어떤 방식으로 고를지 결정
+- `SkillTargetType`: 스킬 대상이 Enemy인지 Self인지 구분
+- `SkillEffectKind`: 스킬 효과가 Damage인지 Buff인지 구분
 
 ### `Domain/Actors/ActorModel.cs`
 
@@ -42,6 +50,8 @@ Unity `GameObject`나 `MonoBehaviour`에 의존하지 않는 순수 게임 규�
 
 - Actor ID, 표시 이름, 팀, 현재 HP, 현재 상태를 가진다.
 - `ReceiveBasicAttack()`에서 피해를 받고 HP/사망 이벤트를 발행한다.
+- `ReceiveSkillAttack()`에서 스킬 피해 배율을 적용한 피해를 받는다.
+- `SkillLoadout`을 들고 있으며 `Tick()`에서 버프 만료와 스킬 쿨다운을 함께 갱신한다.
 - `ActorStateMachine`으로 상태 변경을 위임한다.
 - `StatModifierStack`을 통해 버프/디버프형 스탯 변형을 적용한다.
 - Unity 컴포넌트가 아니므로 오프라인 전투 시뮬레이션으로 확장하기 좋은 핵심 모델이다.
@@ -89,6 +99,38 @@ Actor의 최종 전투 스탯을 표현하는 읽기 전용 값 객체다.
 - additive는 합산하고 multiplier는 곱산한다.
 - Week3의 `BuffEffect`가 연결될 핵심 확장 지점이다.
 
+### `Domain/Skills/SkillDefinition.cs`
+
+스킬의 정적 콘텐츠 데이터를 표현한다.
+
+- Skill ID, 표시 이름, 대상 타입, 쿨다운, 사거리, 우선순위를 가진다.
+- Damage/Buff 같은 여러 `SkillEffectDefinition`을 순서대로 가진다.
+- 런타임 값은 저장하지 않고, 콘텐츠 원본 역할만 한다.
+
+### `Domain/Skills/SkillEffectDefinition.cs`
+
+스킬 안에 들어가는 개별 효과 데이터를 표현한다.
+
+- `Damage` 효과는 공격력 배율을 가진다.
+- `Buff` 효과는 `StatModifier`와 지속시간을 가진다.
+- 각 효과마다 Enemy/Self 대상 타입을 별도로 지정할 수 있다.
+
+### `Domain/Skills/SkillRuntime.cs`
+
+스킬 1개의 런타임 상태를 관리한다.
+
+- `SkillDefinition`을 참조하고 남은 쿨다운 시간을 가진다.
+- `Tick()`, `StartCooldown()`, `ResetCooldown()`으로 쿨다운을 관리한다.
+- 같은 스킬 정의라도 Actor마다 별도 런타임 상태를 갖게 해준다.
+
+### `Domain/Skills/SkillLoadout.cs`
+
+Actor가 장착한 스킬 슬롯 묶음이다.
+
+- 최대 4칸만 허용한다.
+- 각 슬롯은 `SkillRuntime`으로 저장된다.
+- `SelectBestReadySkill()`은 사용 가능한 스킬 중 Priority가 가장 높은 것을 고른다.
+
 ### `Domain/Combat/DamageResult.cs`
 
 피해 계산 결과를 담는 값 객체다.
@@ -120,31 +162,52 @@ Actor의 최종 전투 스탯을 표현하는 읽기 전용 값 객체다.
 
 ### `Domain/Combat/ISkillExecutor.cs`
 
-Week3 Skill System을 위한 실행 인터페이스 후보이다.
+Skill System 실행 구현체가 따라야 하는 인터페이스다.
 
-- `CanExecute()`로 스킬 사용 가능 여부를 판단한다.
+- `CanExecute()`로 스킬 사용 가능 여부와 사거리 조건을 판단한다.
 - `Execute()`로 스킬 실행을 수행한다.
-- 아직 구체 SkillDefinition과 Runtime은 붙지 않았다.
+- Domain 모델만으로 스킬 실행을 테스트할 수 있게 한다.
 
 ### `Domain/Combat/ISkillEffect.cs`
 
-Week3 Skill Effect 조합을 위한 인터페이스 후보이다.
+Skill Effect 조합을 위한 인터페이스다.
 
 - `Apply()`로 Damage, Buff, Move 같은 효과를 ActorModel에 적용한다.
 - 상속형 스킬보다 Effect 조합형 구조로 확장하기 위한 시작점이다.
+
+### `Domain/Combat/SkillExecutionResult.cs`
+
+스킬 실행 결과를 담는다.
+
+- 성공 여부, 스킬 ID, 표시 이름, 적용된 효과 수, 마지막 피해 결과를 가진다.
+- `SkillEffectResult`도 같은 파일에 있으며 개별 효과의 적용 결과를 나타낸다.
+
+### `Domain/Combat/DamageSkillEffect.cs`
+
+Damage 효과를 ActorModel에 적용한다.
+
+- 스킬 효과의 공격력 배율을 `ActorModel.ReceiveSkillAttack()`에 전달한다.
+- 최종 피해량 계산은 기존 combat 계산 흐름을 재사용한다.
+
+### `Domain/Combat/BuffSkillEffect.cs`
+
+Buff 효과를 ActorModel에 적용한다.
+
+- 같은 시전자/스킬/효과 출처의 기존 modifier를 제거한 뒤 새 modifier를 적용한다.
+- `StatModifierStack` 지속시간 만료 처리와 연결된다.
 
 ### `Domain/Data/PlayerDefinition.cs`
 
 플레이어의 정적 콘텐츠 데이터를 표현한다.
 
-- ID, 표시 이름, 기본 스탯을 가진다.
+- ID, 표시 이름, 기본 스탯, Skill Loadout을 가진다.
 - 런타임 HP나 상태는 저장하지 않는다.
 
 ### `Domain/Data/MonsterDefinition.cs`
 
 몬스터의 정적 콘텐츠 데이터를 표현한다.
 
-- ID, 표시 이름, 기본 스탯, Gold/EXP 보상을 가진다.
+- ID, 표시 이름, 기본 스탯, Gold/EXP 보상, Skill Loadout을 가진다.
 - `WithStats()`로 스테이지 스케일링된 임시 정의를 만들 수 있다.
 
 ### `Domain/Data/StageDefinition.cs`
@@ -155,9 +218,9 @@ Week3 Skill Effect 조합을 위한 인터페이스 후보이다.
 
 ### `Domain/Data/RuntimeContentDatabase.cs`
 
-런타임에서 Player, Monster, Stage definition을 조회하는 데이터베이스다.
+런타임에서 Player, Skill, Monster, Stage definition을 조회하는 데이터베이스다.
 
-- ID 기반 몬스터 조회를 담당한다.
+- ID 기반 Skill/Monster 조회를 담당한다.
 - Stage 번호가 정의 범위를 넘어가면 마지막 Stage 정의를 재사용한다.
 
 ## Runtime
@@ -193,7 +256,9 @@ MVP용 임시 스프라이트를 코드로 생성한다.
 
 Inspector에서 조절 가능한 콘텐츠 데이터 설정이다.
 
-- Player, Monster, Stage 기본 데이터를 가진다.
+- Player, Skill, Monster, Stage 기본 데이터를 가진다.
+- Player/Monster별 4 Slot Skill Loadout을 Inspector 문자열 ID로 설정한다.
+- Skill에는 쿨다운, 사거리, 우선순위, Damage/Buff 효과 배열을 설정한다.
 - `CreateDatabase()`로 Domain의 `RuntimeContentDatabase`를 만든다.
 - 아직 CSV나 ScriptableObject 파이프라인은 아니다.
 
@@ -233,6 +298,7 @@ Unity GameObject와 Domain `ActorModel`을 이어주는 런타임 컴포넌트�
 
 - SpriteRenderer 색상과 방향 전환을 관리한다.
 - 피격/사망 이벤트를 Unity 쪽으로 전달한다.
+- 기본 공격과 스킬 공격 모두 `DamageTaken` 이벤트를 발행한다.
 - 실제 전투 계산은 `ActorModel`과 Domain combat 로직에 맡긴다.
 
 ### `Runtime/Combat/BattleContext.cs`
@@ -242,7 +308,17 @@ Unity GameObject와 Domain `ActorModel`을 이어주는 런타임 컴포넌트�
 - Actor 등록/해제를 담당한다.
 - Player 참조와 TileMap 참조를 가진다.
 - `FindTarget()`에서 `ITargetSelector`를 통해 타겟을 선택한다.
+- `TickActors()`로 전투 중인 Actor의 버프 지속시간과 스킬 쿨다운을 갱신한다.
 - 몬스터 사망 후 짧은 지연 뒤 오브젝트를 제거한다.
+
+### `Runtime/Combat/SkillExecutor.cs`
+
+런타임 스킬 실행을 담당한다.
+
+- Actor의 `SkillLoadout`에서 ready 상태이고 사거리 조건을 만족하는 최고 Priority 스킬을 고른다.
+- Damage 효과는 `CombatActor.TakeSkillAttack()`을 사용해 HUD/로그 이벤트가 유지되게 한다.
+- Buff 효과는 Domain의 `BuffSkillEffect`를 사용해 스탯 modifier로 적용한다.
+- Realtime과 TurnBased 전투 루프가 공통으로 사용한다.
 
 ### `Runtime/Combat/ITargetSelector.cs`
 
@@ -278,7 +354,9 @@ Unity GameObject와 Domain `ActorModel`을 이어주는 런타임 컴포넌트�
 
 Realtime 방식의 per-actor 자동 전투 루프다.
 
-- 매 프레임 타겟을 찾고 사거리 밖이면 이동한다.
+- 매 프레임 타겟을 찾고 Actor의 버프/스킬 쿨다운을 갱신한다.
+- 사용 가능한 스킬이 있으면 기본 공격보다 먼저 실행한다.
+- 스킬 사거리와 기본 공격 사거리 밖이면 이동한다.
 - 사거리 안이면 기본 공격을 수행한다.
 - `UseTileMovement`를 켜면 타일 셀 기반 이동을 사용할 수 있다.
 - `ICombatLoop`을 구현하며 TurnBased 모드에서는 비활성화된다.
@@ -288,8 +366,8 @@ Realtime 방식의 per-actor 자동 전투 루프다.
 TurnBased 방식의 stage-level 자동 전투 루프다.
 
 - 일정 Turn Delay마다 살아 있는 Actor를 순서대로 선택한다.
-- 선택된 Actor가 타겟을 찾아 기본 공격한다.
-- 현재는 기본 공격만 있으며 Skill Priority는 Week3에서 붙일 예정이다.
+- 선택된 Actor가 타겟을 찾아 사용 가능한 스킬을 먼저 실행한다.
+- 스킬을 사용할 수 없으면 이동하거나 기본 공격을 수행한다.
 
 ### `Runtime/Maps/TileMapLayout.cs`
 
@@ -316,6 +394,7 @@ TurnBased 방식의 stage-level 자동 전투 루프다.
 - 기본 Spawn Point를 사용한다.
 - TileMap이 있으면 타일 셀 오프셋 기반으로 반복 스폰 위치를 계산한다.
 - 막힌 칸이면 가까운 walkable cell을 찾는다.
+- MonsterDefinition의 Skill Loadout을 스폰된 ActorModel에 복사한다.
 
 ### `Runtime/Stages/StageSceneFlowController.cs`
 
@@ -373,6 +452,7 @@ MVP 씬과 런타임 구조를 검증하는 에디터 테스트 메뉴다.
 - `SampleScene`과 `Week1VerticalSlice`의 필수 오브젝트/컴포넌트/SerializeField 슬롯을 확인한다.
 - 타일맵, HUD, Restart Panel, Runtime Stage Boot를 검증한다.
 - Realtime/TurnBased 루프 배타성, Field Encounter, StateMachine, StatModifier도 검증한다.
+- SkillDefinition/SkillRuntime/SkillLoadout, DamageEffect, BuffEffect, 런타임 DamageTaken 이벤트도 검증한다.
 
 ### `Editor/TileMapEditorWindow.cs`
 
@@ -408,8 +488,16 @@ Editor 전용 어셈블리 정의 파일이다.
 
 Week3 Skill System을 준비하려면 아래 파일을 같이 보면 된다.
 
+- `Domain/Skills/SkillDefinition.cs`
+- `Domain/Skills/SkillRuntime.cs`
+- `Domain/Skills/SkillLoadout.cs`
+- `Domain/Skills/SkillEffectDefinition.cs`
+- `Domain/Combat/SkillExecutionResult.cs`
+- `Domain/Combat/DamageSkillEffect.cs`
+- `Domain/Combat/BuffSkillEffect.cs`
 - `Domain/Combat/ISkillExecutor.cs`
 - `Domain/Combat/ISkillEffect.cs`
 - `Domain/Combat/IDamageCalculator.cs`
 - `Domain/Actors/StatModifierStack.cs`
+- `Runtime/Combat/SkillExecutor.cs`
 - `Runtime/Combat/TurnBasedAutoBattleController.cs`

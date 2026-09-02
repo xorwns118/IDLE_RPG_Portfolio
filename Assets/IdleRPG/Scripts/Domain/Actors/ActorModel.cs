@@ -1,6 +1,7 @@
 using System;
 using IdleRPG.Domain;
 using IdleRPG.Domain.Combat;
+using IdleRPG.Domain.Skills;
 
 namespace IdleRPG.Domain.Actors
 {
@@ -11,6 +12,7 @@ namespace IdleRPG.Domain.Actors
         private bool DeathRaised;
         private StatBlock BaseStatsValue;
         private StatModifier ActiveStatModifierValue = StatModifier.None;
+        private SkillLoadout SkillLoadoutValue = new SkillLoadout();
 
         public ActorModel(string _Id, string _DisplayName, ActorTeam _Team, StatBlock _Stats)
         {
@@ -34,6 +36,7 @@ namespace IdleRPG.Domain.Actors
         public StatBlock Stats { get; private set; }
         public StatModifier ActiveStatModifier => ActiveStatModifierValue;
         public int ActiveStatModifierCount => StatModifiers.Count;
+        public SkillLoadout SkillLoadout => SkillLoadoutValue;
         public float CurrentHp { get; private set; }
         public ActorState State => StateMachine.CurrentState;
         public bool IsDead => CurrentHp <= 0f || State == ActorState.Dead;
@@ -48,6 +51,19 @@ namespace IdleRPG.Domain.Actors
                 return;
 
             StateMachine.TrySetState(_State);
+        }
+
+        public void Tick(float _DeltaSeconds)
+        {
+            TickStatModifiers(_DeltaSeconds);
+
+            if (SkillLoadoutValue != null)
+                SkillLoadoutValue.TickCooldowns(_DeltaSeconds);
+        }
+
+        public void SetSkillLoadout(SkillLoadout _Loadout)
+        {
+            SkillLoadoutValue = _Loadout ?? new SkillLoadout();
         }
 
         public void ApplyStatModifier(StatModifier _Modifier, bool _KeepHealthPercent = true)
@@ -91,11 +107,25 @@ namespace IdleRPG.Domain.Actors
         {
             DeathRaised = false;
             CurrentHp = Stats.MaxHp;
+            SkillLoadoutValue.ResetCooldowns();
             StateMachine.Reset();
             HealthChanged?.Invoke(this, CurrentHp, Stats.MaxHp);
         }
 
         public DamageResult ReceiveBasicAttack(StatBlock _AttackerStats, float _CriticalRoll)
+        {
+            return ReceiveAttack(_AttackerStats, _CriticalRoll);
+        }
+
+        public DamageResult ReceiveSkillAttack(StatBlock _AttackerStats, float _PowerMultiplier, float _CriticalRoll)
+        {
+            if (_PowerMultiplier <= 0f)
+                return DamageResult.None;
+
+            return ReceiveAttack(ScaleAttackPower(_AttackerStats, _PowerMultiplier), _CriticalRoll);
+        }
+
+        private DamageResult ReceiveAttack(StatBlock _AttackerStats, float _CriticalRoll)
         {
             if (IsDead)
                 return DamageResult.None;
@@ -120,6 +150,19 @@ namespace IdleRPG.Domain.Actors
             }
 
             return result;
+        }
+
+        private static StatBlock ScaleAttackPower(StatBlock _Stats, float _PowerMultiplier)
+        {
+            return new StatBlock(
+                _Stats.MaxHp,
+                _Stats.AttackPower * Math.Max(0f, _PowerMultiplier),
+                _Stats.Defense,
+                _Stats.AttackRange,
+                _Stats.AttackInterval,
+                _Stats.MoveSpeed,
+                _Stats.CriticalChance,
+                _Stats.CriticalMultiplier);
         }
 
         private void RecalculateStats(bool _KeepHealthPercent)

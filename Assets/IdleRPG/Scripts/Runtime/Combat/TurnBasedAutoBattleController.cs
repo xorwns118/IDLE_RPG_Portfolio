@@ -1,5 +1,6 @@
 using System.Collections;
 using IdleRPG.Domain;
+using IdleRPG.Domain.Combat;
 using IdleRPG.Runtime.Actors;
 using IdleRPG.Runtime.Configuration;
 using IdleRPG.Runtime.Maps;
@@ -16,6 +17,7 @@ namespace IdleRPG.Runtime.Combat
         private BattleContext Context;
         private float TurnTimer;
         private int TurnCursor = -1;
+        private readonly SkillExecutor Skills = new SkillExecutor();
         private bool RuntimeActive;
         private bool IsActing;
 
@@ -64,6 +66,12 @@ namespace IdleRPG.Runtime.Combat
                 return false;
             }
 
+            if (TryUseSkill(actor, target, _CriticalRoll))
+            {
+                ExecutedTurnCount++;
+                return true;
+            }
+
             if (!IsInsideAttackRange(actor, target))
             {
                 if (!TryMoveTowardTarget(actor, target))
@@ -83,12 +91,19 @@ namespace IdleRPG.Runtime.Combat
             if (Context == null || !RuntimeActive || IsActing)
                 return;
 
+            Context.TickActors(Time.deltaTime);
             TurnTimer -= Time.deltaTime;
             if (TurnTimer > 0f)
                 return;
 
             TryExecuteTurn(Random.value);
             TurnTimer = Settings.TurnDelaySeconds;
+        }
+
+        private bool TryUseSkill(CombatActor _Actor, CombatActor _Target, float _CriticalRoll)
+        {
+            float distance = Vector2.Distance(_Actor.transform.position, _Target.transform.position);
+            return Skills.TryExecuteBestSkill(_Actor, _Target, distance, _CriticalRoll, out SkillExecutionResult result) && result.Succeeded;
         }
 
         private bool IsInsideAttackRange(CombatActor _Actor, CombatActor _Target)

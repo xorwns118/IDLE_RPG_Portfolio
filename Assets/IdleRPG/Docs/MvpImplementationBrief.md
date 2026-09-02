@@ -1,7 +1,7 @@
 # MVP Implementation Brief
 
 작성일: 2026-08-20
-최종 갱신일: 2026-08-31
+최종 갱신일: 2026-09-02
 
 ## 요약
 
@@ -17,7 +17,10 @@
 - `DefaultTargetSelector`와 `CombatRangePolicy`로 타겟 선정/사거리 판정 분리
 - `ActorStateMachine`과 `StatModifier`로 상태 전환과 버프형 스탯 확장 기반 추가
 - `CombatLoopMode`와 `ICombatLoop`로 실시간/턴제 전투 루프가 동시에 실행되지 않도록 배타화
-- `IDamageCalculator`, `ISkillExecutor`, `ISkillEffect`로 Week3 Skill System 연결 인터페이스 후보 추가
+- `IDamageCalculator`, `ISkillExecutor`, `ISkillEffect`로 전투 계산/스킬 실행 인터페이스 분리
+- `SkillDefinition`, `SkillRuntime`, `SkillLoadout`으로 스킬 ID, 쿨다운, 사거리, 우선순위, 4 Slot Loadout 구조 추가
+- `SkillExecutor`, `DamageSkillEffect`, `BuffSkillEffect`로 사용 가능 조건, 타겟 검증, 쿨다운, 피해/버프 효과 실행 흐름 구현
+- 실시간/턴제 자동전투가 기본 공격 전에 사용 가능한 스킬을 우선 실행하도록 연결
 - 필드 조우에서 전투 진입을 요청할 수 있는 `FieldEncounterController`와 `StageSceneFlowController` 추가
 - 실시간 전투와 분리된 턴제 자동전투 초안 `TurnBasedAutoBattleController` 추가
 - Hero 사망 시 현재 Stage 재시작 UI 표시 및 재시작 시 위치/HP/상태 회복
@@ -62,7 +65,7 @@ Monster 프리팹 뼈대가 필요하면 `Idle RPG > Prefabs > Monster > Create 
 
 `MvpSceneController`에는 디자이너가 조절하는 설정과 자동 할당되는 씬 참조가 나뉘어 있다.
 
-- `Game Content`: Player, Monster, Stage 데이터
+- `Game Content`: Player, Skill, Monster, Stage 데이터와 Player/Monster Skill Loadout
 - `Designer Settings`: Camera, World Layout, Actor View, Combat Loop, Monster Spawn, Scene Flow, Field Encounter, Turn Combat, HUD, Restart Popup, Stage Runtime
 - `PlayerStartPoint`
 - `MonsterSpawnPoint`
@@ -86,6 +89,8 @@ Monster 프리팹 뼈대가 필요하면 `Idle RPG > Prefabs > Monster > Create 
 Unity 의존성이 없는 순수 게임 규칙 계층이다.
 
 - `ActorModel`: Actor의 상태, HP, 사망 이벤트 관리
+- `SkillDefinition`, `SkillRuntime`, `SkillLoadout`: 스킬 정적 데이터, 런타임 쿨다운, 4칸 장착 슬롯
+- `DamageSkillEffect`, `BuffSkillEffect`, `SkillExecutionResult`: 스킬 효과 실행과 결과 데이터
 - `StatBlock`: HP, 공격력, 방어력, 사거리, 이동속도, 공격간격, 치명타 관련 수치
 - `StatModifier`: 버프/디버프용 additive/multiplier 스탯 변형 값
 - `ActorStateMachine`: Dead 상태 잠금과 Restore 시 Idle 복귀를 담당하는 상태 전환 단위
@@ -99,7 +104,7 @@ Unity 의존성이 없는 순수 게임 규칙 계층이다.
 - `CombatMath`: 기본 공격 피해량 계산
 - `DamageResult`: 피해량, 치명타 여부 등 계산 결과
 - `PlayerDefinition`, `MonsterDefinition`, `StageDefinition`: 런타임 콘텐츠 정의
-- `RuntimeContentDatabase`: 정의 데이터 조회
+- `RuntimeContentDatabase`: Player, Skill, Monster, Stage 정의 데이터 조회
 
 ### Runtime
 
@@ -108,19 +113,19 @@ Unity 의존성이 없는 순수 게임 규칙 계층이다.
 Unity 씬에서 실제로 동작하는 계층이다.
 
 - `MvpSceneController`: 씬 오브젝트, HUD, Actor 배치 및 Play 시 런타임 초기화
-- `MvpGameContentSettings`: Inspector에서 조절 가능한 Player, Monster, Stage 콘텐츠 설정
+- `MvpGameContentSettings`: Inspector에서 조절 가능한 Player, Skill, Monster, Stage 콘텐츠 설정
 - `MvpSceneDesignerSettings`: Inspector에서 조절 가능한 카메라, 타일맵, Actor 표시, 타겟팅, 필드 조우, 전투 방식, HUD, 재시작 팝업, 스테이지 런타임 설정
 - `GeneratedSpriteFactory`: 임시 유닛 스프라이트와 사각형 타일 스프라이트 생성
 - `DemoContentFactory`: 기본 Week 1 설정을 `RuntimeContentDatabase`로 변환하는 호환용 팩토리
 - `ActorFactory`: GameObject에 전투 Actor 컴포넌트 묶음, 월드 HP 바, Display Name 라벨 구성
 - `CombatActor`: ActorModel과 SpriteRenderer를 연결하고 피격/사망 이벤트 발행
 - `TileMapLayout`: 사각형 타일맵 생성, 셀/월드 좌표 변환, Sprite Palette 기반 타일 렌더링, 막힌 칸 판정, 경로 첫 칸 계산, y축 기준 정렬 순서 계산
-- `AutoCombatController`: 타겟 셀렉터 결과를 받아 월드 좌표 기반 이동, 기본 공격 수행. `UseTileMovement`를 켜면 기존 타일 이동 경로도 사용할 수 있음
+- `AutoCombatController`: 타겟 셀렉터 결과를 받아 스킬 우선 사용, 월드 좌표 기반 이동, 기본 공격 수행. `UseTileMovement`를 켜면 기존 타일 이동 경로도 사용할 수 있음
 - `BattleContext`: 살아 있는 Actor 등록, 타일맵 참조, 타겟팅 설정, 타겟 선정 진입점 관리
 - `DefaultTargetSelector`: 설정된 기준에 맞춰 유효한 적 Actor 선택
 - `CombatRangePolicy`: 월드 거리 기반 사거리/접근 위치 계산
 - `ICombatLoop`: Realtime/TurnBased 전투 루프 활성 상태를 공통으로 제어하는 인터페이스
-- `TurnBasedAutoBattleController`: 턴 딜레이에 맞춰 살아 있는 Actor가 순서대로 자동 기본 공격을 수행하는 초안
+- `TurnBasedAutoBattleController`: 턴 딜레이에 맞춰 살아 있는 Actor가 순서대로 스킬 우선 사용, 이동, 기본 공격을 수행하는 초안
 - `StageController`: `RuntimeSetup` 단일 입력으로 스테이지 런타임을 초기화하고, 플레이어 생성/회복, 몬스터 생성, 처치 보상, 다음 스테이지 진행, 현재 Stage 재시작/외부 Stage 시작 요청 처리
 - `StageSceneFlowController`: Field/Battle 모드 전환, 전투 스테이지 요청, 옵션 기반 씬 로드 처리
 - `FieldEncounterController`: Player와 Encounter Point 거리가 가까워지면 전투 진입 요청
@@ -147,10 +152,11 @@ MVP 씬 구성과 검증을 위한 에디터 전용 코드다.
 3. `BattleContext`, `StageController`, `StageSceneFlowController`, `TurnBasedAutoBattleController`가 컨트롤러 오브젝트에 추가된다.
 4. `MvpSceneController`의 `Game Content` 설정이 `RuntimeContentDatabase`를 만든다.
 5. `StageController.Initialize(RuntimeSetup)`이 `TileMapLayout`과 `Player Start Point` 위치에 새 Hero를 풀 HP로 생성한 뒤 첫 몬스터를 스폰한다.
-6. `BattleContext.FindTarget()`이 `DefaultTargetSelector`로 적을 고르고, `AutoCombatController.Update()`가 월드 거리 기준 이동/공격을 수행한다.
-7. 몬스터 사망 시 `StageController`가 보상을 지급하고 처치 수를 증가시킨다.
-8. 처치 수가 요구치에 도달하면 다음 스테이지로 이동한다.
-9. `MvpSceneController.Update()`가 HUD 텍스트와 HP Fill을 갱신한다.
+6. Player/Monster 정의의 Skill Loadout이 각 `ActorModel`에 `SkillRuntime`으로 복사된다.
+7. `BattleContext.FindTarget()`이 `DefaultTargetSelector`로 적을 고르고, `AutoCombatController.Update()`가 사용 가능한 스킬을 먼저 실행한 뒤 월드 거리 기준 이동/공격을 수행한다.
+8. 몬스터 사망 시 `StageController`가 보상을 지급하고 처치 수를 증가시킨다.
+9. 처치 수가 요구치에 도달하면 다음 스테이지로 이동한다.
+10. `MvpSceneController.Update()`가 HUD 텍스트와 HP Fill을 갱신한다.
 
 턴제 자동전투를 시험하려면 `Designer Settings > Combat Loop > Mode`를 `TurnBased`로 바꾼다.
 필드 조우를 시험하려면 `Designer Settings > Field Encounter > Enabled`를 켜고, `Scene Flow > Load Configured Scenes` 여부를 프로젝트 씬 분리 상태에 맞게 설정한다.
@@ -187,6 +193,12 @@ MVP 씬 구성과 검증을 위한 에디터 전용 코드다.
 - 2026-08-31 스크립트 역할 문서 `ScriptRoleGuide.md` 추가
 - 2026-08-31 `dotnet build Idle_RPG.sln` 통과
 - 2026-08-31 임시 프로젝트 batchmode 스모크 테스트 통과: `SampleScene`, `Week1VerticalSlice`
+- 2026-09-02 `SkillDefinition`, `SkillRuntime`, `SkillLoadout`, `SkillExecutor`, `DamageSkillEffect`, `BuffSkillEffect` 추가
+- 2026-09-02 `Game Content > Skills`와 Player/Monster `SkillLoadout` 설정 추가
+- 2026-09-02 Realtime/TurnBased 전투 루프가 사거리 안의 ready skill을 기본 공격보다 먼저 실행하도록 연결
+- 2026-09-02 스모크 테스트에 스킬 4 Slot 제한, 쿨다운 회복, 피해 효과, 버프 만료, 런타임 DamageTaken 이벤트 검증 추가
+- 2026-09-02 `dotnet build Idle_RPG.sln` 통과
+- 2026-09-02 임시 프로젝트 batchmode 스모크 테스트 통과: `SampleScene`, `Week1VerticalSlice`
 
 주의:
 
@@ -199,16 +211,16 @@ MVP 씬 구성과 검증을 위한 에디터 전용 코드다.
 - 그래픽은 기본적으로 임시 생성 스프라이트 기반이지만, 타일은 Sprite Palette에 Slice PNG Sprite를 할당해 교체할 수 있다.
 - 타일맵은 MVP용 코드 생성 타일과 전용 EditorWindow 기반이며, 아직 Unity Tilemap 에셋/브러시 파이프라인은 아니다.
 - 콘텐츠 데이터는 Inspector에서 조절 가능하지만 아직 별도 ScriptableObject/CSV 파이프라인은 아니다.
-- 스킬, 장비, 인벤토리, 저장/로드, 성장 시스템은 아직 없다.
-- 전투 AI는 Inspector에서 Nearest/LowestHp/HighestAttack 타겟 기준을 바꿀 수 있지만, 스킬/위협도/파티 포지션 판단은 아직 없다.
+- 스킬 코어는 들어갔지만, 스킬 전용 UI, 아이콘, 애니메이션, 투사체, 시전 로그는 아직 없다.
+- 장비, 인벤토리, 저장/로드, 성장 시스템은 아직 없다.
+- 전투 AI는 Inspector에서 Nearest/LowestHp/HighestAttack 타겟 기준을 바꿀 수 있지만, 위협도/파티 포지션 판단은 아직 없다.
 - 필드 조우와 턴제 전투는 핵심 흐름 초안이며, 실제 플레이어 필드 조작/전투 전용 씬 연출은 아직 분리되지 않았다.
-- Skill System 인터페이스 후보는 존재하지만, 실제 SkillDefinition/SkillRuntime/Effect 구현은 Week3 범위다.
 - Stage 밸런스는 테스트용 수치다.
 
 ## 다음 작업 제안
 
 1. CSV 또는 ScriptableObject 기반 콘텐츠 파이프라인으로 Inspector 설정을 자산화
-2. 기본 공격을 SkillDefinition/SkillRuntime 구조로 분리
-3. 실제 필드 플레이어 이동, 조우 지점, BattleScene 전환 연출 구성
-4. 실제 2D 캐릭터/몬스터 스프라이트와 애니메이션 연결
-5. 드랍 보상, 성장 수치, 장비 슬롯, 저장 데이터 구조 추가
+2. 스킬 아이콘, 시전 로그, 쿨다운 표시 UI 추가
+3. 기본 공격도 공용 Action/Skill 파이프라인으로 통합할지 결정
+4. 실제 필드 플레이어 이동, 조우 지점, BattleScene 전환 연출 구성
+5. 실제 2D 캐릭터/몬스터 스프라이트와 애니메이션 연결

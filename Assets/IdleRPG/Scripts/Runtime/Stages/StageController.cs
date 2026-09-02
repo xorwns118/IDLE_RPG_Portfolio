@@ -4,6 +4,7 @@ using IdleRPG.Domain;
 using IdleRPG.Domain.Actors;
 using IdleRPG.Domain.Combat;
 using IdleRPG.Domain.Data;
+using IdleRPG.Domain.Skills;
 using IdleRPG.Runtime.Actors;
 using IdleRPG.Runtime.Combat;
 using IdleRPG.Runtime.Configuration;
@@ -164,7 +165,9 @@ namespace IdleRPG.Runtime.Stages
         private ActorModel CreatePlayerModel()
         {
             PlayerDefinition definition = Database.Player;
-            return new ActorModel(definition.Id, definition.DisplayName, ActorTeam.Player, definition.Stats);
+            ActorModel model = new ActorModel(definition.Id, definition.DisplayName, ActorTeam.Player, definition.Stats);
+            model.SetSkillLoadout(new SkillLoadout(definition.SkillLoadout));
+            return model;
         }
 
         private void BeginStage(int _StageNumber)

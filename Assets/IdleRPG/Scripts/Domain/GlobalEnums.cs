@@ -62,4 +62,16 @@ namespace IdleRPG.Domain
         Sequential,
         Random
     }
+
+    public enum SkillTargetType
+    {
+        Enemy,
+        Self
+    }
+
+    public enum SkillEffectKind
+    {
+        Damage,
+        Buff
+    }
 }
