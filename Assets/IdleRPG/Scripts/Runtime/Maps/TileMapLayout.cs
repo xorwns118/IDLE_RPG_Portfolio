@@ -9,9 +9,13 @@ namespace IdleRPG.Runtime.Maps
     public sealed class TileMapLayout : MonoBehaviour
     {
         private const int PathMoveCost = 10;
+        private const int PathDiagonalMoveCost = 14;
         private const int PathTurnCost = 2;
 
         [SerializeField] private MvpTileMapSettings SettingsValue = new MvpTileMapSettings();
+        private readonly List<Vector2Int> RawPathBuffer = new List<Vector2Int>();
+        private readonly List<Vector2Int> CompressedPathBuffer = new List<Vector2Int>();
+        private readonly List<Vector2Int> SmoothedPathBuffer = new List<Vector2Int>();
 
         public MvpTileMapSettings Settings => SettingsValue;
         public bool IsEnabled => SettingsValue != null && SettingsValue.Enabled;
@@ -90,6 +94,19 @@ namespace IdleRPG.Runtime.Maps
             return SettingsValue.GetCellDistance(_From, _To);
         }
 
+        public int GetNavigationDistance(Vector2Int _From, Vector2Int _To, MvpTileNavigationSettings _NavigationSettings)
+        {
+            MvpTileNavigationSettings navigationSettings = ResolveNavigationSettings(_NavigationSettings);
+            Vector2Int from = ClampCell(_From);
+            Vector2Int to = ClampCell(_To);
+            int deltaX = Mathf.Abs(from.x - to.x);
+            int deltaY = Mathf.Abs(from.y - to.y);
+            if (navigationSettings.AllowDiagonalMovement)
+                return Mathf.Max(deltaX, deltaY);
+
+            return deltaX + deltaY;
+        }
+
         public bool IsWalkable(Vector2Int _Cell)
         {
             return SettingsValue.IsWalkable(_Cell);
@@ -133,15 +150,53 @@ namespace IdleRPG.Runtime.Maps
 
         public Vector2Int GetNextCellToward(Vector2Int _From, Vector2Int _Target, int _StopDistance)
         {
+            return GetNextCellToward(_From, _Target, _StopDistance, new MvpTileNavigationSettings());
+        }
+
+        public Vector2Int GetNextCellToward(
+            Vector2Int _From,
+            Vector2Int _Target,
+            int _StopDistance,
+            MvpTileNavigationSettings _NavigationSettings)
+        {
             Vector2Int from = ClampCell(_From);
-            List<Vector2Int> path = new List<Vector2Int>();
-            if (!TryGetPathToward(from, _Target, _StopDistance, path) || path.Count == 0)
+            if (!TryGetPathToward(from, _Target, _StopDistance, _NavigationSettings, RawPathBuffer)
+                || RawPathBuffer.Count == 0)
                 return from;
 
-            return path[0];
+            return RawPathBuffer[0];
+        }
+
+        public Vector2Int GetNextWaypointToward(Vector2Int _From, Vector2Int _Target, int _StopDistance)
+        {
+            return GetNextWaypointToward(_From, _Target, _StopDistance, new MvpTileNavigationSettings());
+        }
+
+        public Vector2Int GetNextWaypointToward(
+            Vector2Int _From,
+            Vector2Int _Target,
+            int _StopDistance,
+            MvpTileNavigationSettings _NavigationSettings)
+        {
+            Vector2Int from = ClampCell(_From);
+            if (!TryGetSmoothedPathToward(from, _Target, _StopDistance, _NavigationSettings, SmoothedPathBuffer)
+                || SmoothedPathBuffer.Count == 0)
+                return from;
+
+            return SmoothedPathBuffer[0];
         }
 
         public bool TryGetPathToward(Vector2Int _From, Vector2Int _Target, int _StopDistance, List<Vector2Int> _Path)
+        {
+            return TryGetPathToward(_From, _Target, _StopDistance, new MvpTileNavigationSettings(), _Path);
+        }
+
+        public bool TryGetPathToward(
+            Vector2Int _From,
+            Vector2Int _Target,
+            int _StopDistance,
+            MvpTileNavigationSettings _NavigationSettings,
+            List<Vector2Int> _Path)
         {
             if (_Path == null)
                 return false;
@@ -150,15 +205,52 @@ namespace IdleRPG.Runtime.Maps
             Vector2Int from = ClampCell(_From);
             Vector2Int target = ClampCell(_Target);
             int stopDistance = Mathf.Max(1, _StopDistance);
-            if (GetCellDistance(from, target) <= stopDistance)
+            MvpTileNavigationSettings navigationSettings = ResolveNavigationSettings(_NavigationSettings);
+            if (GetNavigationDistance(from, target, navigationSettings) <= stopDistance)
                 return true;
 
             Dictionary<Vector2Int, Vector2Int> previousCells = new Dictionary<Vector2Int, Vector2Int>();
-            Vector2Int destination = FindPathDestination(from, target, stopDistance, previousCells);
+            Vector2Int destination = FindPathDestination(from, target, stopDistance, navigationSettings, previousCells);
             if (destination == from)
                 return false;
 
             BuildPath(from, destination, previousCells, _Path);
+            return _Path.Count > 0;
+        }
+
+        public bool TryGetSmoothedPathToward(Vector2Int _From, Vector2Int _Target, int _StopDistance, List<Vector2Int> _Path)
+        {
+            return TryGetSmoothedPathToward(_From, _Target, _StopDistance, new MvpTileNavigationSettings(), _Path);
+        }
+
+        public bool TryGetSmoothedPathToward(
+            Vector2Int _From,
+            Vector2Int _Target,
+            int _StopDistance,
+            MvpTileNavigationSettings _NavigationSettings,
+            List<Vector2Int> _Path)
+        {
+            if (_Path == null)
+                return false;
+
+            _Path.Clear();
+            RawPathBuffer.Clear();
+            CompressedPathBuffer.Clear();
+            MvpTileNavigationSettings navigationSettings = _NavigationSettings ?? new MvpTileNavigationSettings();
+            navigationSettings.EnsureDefaults();
+            if (!TryGetPathToward(_From, _Target, _StopDistance, navigationSettings, RawPathBuffer))
+                return false;
+
+            if (!navigationSettings.UseWaypointCompression)
+            {
+                if (RawPathBuffer.Count > 0)
+                    _Path.Add(RawPathBuffer[0]);
+
+                return _Path.Count > 0;
+            }
+
+            CompressPathByDirection(_From, RawPathBuffer, CompressedPathBuffer);
+            SmoothPathByLineOfSight(_From, CompressedPathBuffer, navigationSettings, _Path);
             return _Path.Count > 0;
         }
 
@@ -225,6 +317,7 @@ namespace IdleRPG.Runtime.Maps
             Vector2Int _From,
             Vector2Int _Target,
             int _StopDistance,
+            MvpTileNavigationSettings _NavigationSettings,
             Dictionary<Vector2Int, Vector2Int> _PreviousCells)
         {
             List<Vector2Int> openCells = new List<Vector2Int> { _From };
@@ -235,7 +328,7 @@ namespace IdleRPG.Runtime.Maps
             };
             Dictionary<Vector2Int, int> pathScores = new Dictionary<Vector2Int, int>
             {
-                [_From] = GetPathHeuristic(_From, _Target, _StopDistance)
+                [_From] = GetPathHeuristic(_From, _Target, _StopDistance, _NavigationSettings)
             };
             Dictionary<Vector2Int, Vector2Int> pathDirections = new Dictionary<Vector2Int, Vector2Int>
             {
@@ -244,31 +337,31 @@ namespace IdleRPG.Runtime.Maps
 
             while (openCells.Count > 0)
             {
-                Vector2Int current = PopBestOpenCell(openCells, pathScores, movementCosts, _Target);
-                if (current != _From && GetCellDistance(current, _Target) <= _StopDistance)
+                Vector2Int current = PopBestOpenCell(openCells, pathScores, movementCosts, _Target, _NavigationSettings);
+                if (current != _From && GetNavigationDistance(current, _Target, _NavigationSettings) <= _StopDistance)
                     return current;
 
                 closedCells.Add(current);
                 Vector2Int currentDirection = pathDirections.TryGetValue(current, out Vector2Int direction)
                     ? direction
                     : Vector2Int.zero;
-                List<Vector2Int> candidates = BuildStepCandidates(current, _Target - current, currentDirection);
+                List<Vector2Int> candidates = BuildStepCandidates(current, _Target - current, currentDirection, _NavigationSettings);
 
                 for (int i = 0; i < candidates.Count; i++)
                 {
                     Vector2Int next = ClampCell(candidates[i]);
-                    if (next == current || closedCells.Contains(next) || !IsWalkable(next))
+                    if (next == current || closedCells.Contains(next) || !CanUsePathStep(current, next, _NavigationSettings))
                         continue;
 
                     Vector2Int nextDirection = GetStepDirection(current, next);
-                    int nextMovementCost = movementCosts[current] + PathMoveCost + GetTurnCost(currentDirection, nextDirection);
+                    int nextMovementCost = movementCosts[current] + GetStepMoveCost(nextDirection) + GetTurnCost(currentDirection, nextDirection);
                     if (movementCosts.TryGetValue(next, out int existingCost) && nextMovementCost >= existingCost)
                         continue;
 
                     _PreviousCells[next] = current;
                     pathDirections[next] = nextDirection;
                     movementCosts[next] = nextMovementCost;
-                    pathScores[next] = nextMovementCost + GetPathHeuristic(next, _Target, _StopDistance);
+                    pathScores[next] = nextMovementCost + GetPathHeuristic(next, _Target, _StopDistance, _NavigationSettings);
                     if (!openCells.Contains(next))
                         openCells.Add(next);
                 }
@@ -281,19 +374,20 @@ namespace IdleRPG.Runtime.Maps
             List<Vector2Int> _OpenCells,
             Dictionary<Vector2Int, int> _PathScores,
             Dictionary<Vector2Int, int> _MovementCosts,
-            Vector2Int _Target)
+            Vector2Int _Target,
+            MvpTileNavigationSettings _NavigationSettings)
         {
             int bestIndex = 0;
             Vector2Int bestCell = _OpenCells[0];
             int bestScore = GetScore(_PathScores, bestCell);
-            int bestDistance = GetCellDistance(bestCell, _Target);
+            int bestDistance = GetNavigationDistance(bestCell, _Target, _NavigationSettings);
             int bestMovementCost = GetScore(_MovementCosts, bestCell);
 
             for (int i = 1; i < _OpenCells.Count; i++)
             {
                 Vector2Int candidate = _OpenCells[i];
                 int candidateScore = GetScore(_PathScores, candidate);
-                int candidateDistance = GetCellDistance(candidate, _Target);
+                int candidateDistance = GetNavigationDistance(candidate, _Target, _NavigationSettings);
                 int candidateMovementCost = GetScore(_MovementCosts, candidate);
                 if (!IsBetterPathCandidate(
                     candidateScore,
@@ -337,9 +431,25 @@ namespace IdleRPG.Runtime.Maps
             return _Scores.TryGetValue(_Cell, out int score) ? score : int.MaxValue;
         }
 
-        private int GetPathHeuristic(Vector2Int _Cell, Vector2Int _Target, int _StopDistance)
+        private int GetPathHeuristic(
+            Vector2Int _Cell,
+            Vector2Int _Target,
+            int _StopDistance,
+            MvpTileNavigationSettings _NavigationSettings)
         {
-            return Mathf.Max(0, GetCellDistance(_Cell, _Target) - _StopDistance) * PathMoveCost;
+            Vector2Int cell = ClampCell(_Cell);
+            Vector2Int target = ClampCell(_Target);
+            int deltaX = Mathf.Abs(cell.x - target.x);
+            int deltaY = Mathf.Abs(cell.y - target.y);
+
+            if (_NavigationSettings.AllowDiagonalMovement)
+            {
+                int remainingX = Mathf.Max(0, deltaX - _StopDistance);
+                int remainingY = Mathf.Max(0, deltaY - _StopDistance);
+                return GetOctileMoveCost(remainingX, remainingY);
+            }
+
+            return Mathf.Max(0, deltaX + deltaY - _StopDistance) * PathMoveCost;
         }
 
         private static int GetTurnCost(Vector2Int _CurrentDirection, Vector2Int _NextDirection)
@@ -348,6 +458,18 @@ namespace IdleRPG.Runtime.Maps
                 return 0;
 
             return PathTurnCost;
+        }
+
+        private static int GetStepMoveCost(Vector2Int _Direction)
+        {
+            return IsDiagonalDirection(_Direction) ? PathDiagonalMoveCost : PathMoveCost;
+        }
+
+        private static int GetOctileMoveCost(int _DeltaX, int _DeltaY)
+        {
+            int diagonalSteps = Mathf.Min(_DeltaX, _DeltaY);
+            int straightSteps = Mathf.Max(_DeltaX, _DeltaY) - diagonalSteps;
+            return diagonalSteps * PathDiagonalMoveCost + straightSteps * PathMoveCost;
         }
 
         private static Vector2Int GetStepDirection(Vector2Int _From, Vector2Int _To)
@@ -375,14 +497,156 @@ namespace IdleRPG.Runtime.Maps
             _Path.Reverse();
         }
 
+        private static void CompressPathByDirection(
+            Vector2Int _From,
+            List<Vector2Int> _RawPath,
+            List<Vector2Int> _CompressedPath)
+        {
+            _CompressedPath.Clear();
+            if (_RawPath.Count == 0)
+                return;
+
+            Vector2Int previous = _From;
+            Vector2Int previousDirection = GetStepDirection(_From, _RawPath[0]);
+            for (int i = 1; i < _RawPath.Count; i++)
+            {
+                Vector2Int current = _RawPath[i];
+                Vector2Int direction = GetStepDirection(previous, current);
+                if (direction != previousDirection)
+                {
+                    _CompressedPath.Add(previous);
+                    previousDirection = direction;
+                }
+
+                previous = current;
+            }
+
+            _CompressedPath.Add(_RawPath[_RawPath.Count - 1]);
+        }
+
+        private void SmoothPathByLineOfSight(
+            Vector2Int _From,
+            List<Vector2Int> _CompressedPath,
+            MvpTileNavigationSettings _NavigationSettings,
+            List<Vector2Int> _SmoothedPath)
+        {
+            _SmoothedPath.Clear();
+            Vector2Int anchor = ClampCell(_From);
+            int startIndex = 0;
+            while (startIndex < _CompressedPath.Count)
+            {
+                int selectedIndex = startIndex;
+                for (int i = _CompressedPath.Count - 1; i >= startIndex; i--)
+                {
+                    Vector2Int candidate = _CompressedPath[i];
+                    if (!_NavigationSettings.AllowDiagonalMovement && IsDiagonalSegment(anchor, candidate))
+                        continue;
+
+                    if (!HasWalkableLine(anchor, candidate))
+                        continue;
+
+                    selectedIndex = i;
+                    break;
+                }
+
+                Vector2Int waypoint = _CompressedPath[selectedIndex];
+                _SmoothedPath.Add(waypoint);
+                anchor = waypoint;
+                startIndex = selectedIndex + 1;
+            }
+        }
+
+        private bool HasWalkableLine(Vector2Int _From, Vector2Int _To)
+        {
+            Vector2Int from = ClampCell(_From);
+            Vector2Int to = ClampCell(_To);
+            if (!IsWalkable(to))
+                return false;
+
+            Vector2 fromPoint = new Vector2(from.x, from.y);
+            Vector2 toPoint = new Vector2(to.x, to.y);
+            int stepCount = Mathf.Max(1, (Mathf.Abs(to.x - from.x) + Mathf.Abs(to.y - from.y)) * 2);
+            Vector2Int previousCell = from;
+            for (int i = 1; i <= stepCount; i++)
+            {
+                float progress = i / (float)stepCount;
+                Vector2 sample = Vector2.Lerp(fromPoint, toPoint, progress);
+                Vector2Int sampleCell = ClampCell(new Vector2Int(
+                    Mathf.RoundToInt(sample.x),
+                    Mathf.RoundToInt(sample.y)));
+
+                if (!IsWalkable(sampleCell))
+                    return false;
+
+                if (!CanMoveBetweenLineCells(previousCell, sampleCell))
+                    return false;
+
+                previousCell = sampleCell;
+            }
+
+            return true;
+        }
+
+        private bool CanMoveBetweenLineCells(Vector2Int _From, Vector2Int _To)
+        {
+            Vector2Int from = ClampCell(_From);
+            Vector2Int to = ClampCell(_To);
+            int deltaX = to.x - from.x;
+            int deltaY = to.y - from.y;
+            if (deltaX == 0 || deltaY == 0)
+                return true;
+
+            Vector2Int horizontalSide = new Vector2Int(to.x, from.y);
+            Vector2Int verticalSide = new Vector2Int(from.x, to.y);
+            return IsWalkable(horizontalSide) && IsWalkable(verticalSide);
+        }
+
+        private bool CanUsePathStep(
+            Vector2Int _From,
+            Vector2Int _To,
+            MvpTileNavigationSettings _NavigationSettings)
+        {
+            if (!IsWalkable(_To))
+                return false;
+
+            if (!IsDiagonalSegment(_From, _To))
+                return true;
+
+            if (!_NavigationSettings.AllowDiagonalMovement)
+                return false;
+
+            return CanMoveBetweenLineCells(_From, _To);
+        }
+
+        private static bool IsDiagonalSegment(Vector2Int _From, Vector2Int _To)
+        {
+            return _From.x != _To.x && _From.y != _To.y;
+        }
+
+        private static bool IsDiagonalDirection(Vector2Int _Direction)
+        {
+            return _Direction.x != 0 && _Direction.y != 0;
+        }
+
+        private static MvpTileNavigationSettings ResolveNavigationSettings(MvpTileNavigationSettings _NavigationSettings)
+        {
+            MvpTileNavigationSettings navigationSettings = _NavigationSettings ?? new MvpTileNavigationSettings();
+            navigationSettings.EnsureDefaults();
+            return navigationSettings;
+        }
+
         private static List<Vector2Int> BuildStepCandidates(
             Vector2Int _From,
             Vector2Int _Delta,
-            Vector2Int _CurrentDirection)
+            Vector2Int _CurrentDirection,
+            MvpTileNavigationSettings _NavigationSettings)
         {
-            List<Vector2Int> candidates = new List<Vector2Int>(4);
+            List<Vector2Int> candidates = new List<Vector2Int>(_NavigationSettings.AllowDiagonalMovement ? 8 : 4);
             if (_CurrentDirection != Vector2Int.zero)
                 AddUniqueCandidate(candidates, _From + _CurrentDirection);
+
+            if (_NavigationSettings.AllowDiagonalMovement)
+                AddGoalBiasedDiagonalStepCandidates(candidates, _From, _Delta);
 
             AddGoalBiasedStepCandidates(candidates, _From, _Delta);
             return candidates;
@@ -423,6 +687,41 @@ namespace IdleRPG.Runtime.Maps
                 return;
 
             AddUniqueCandidate(_Candidates, new Vector2Int(_From.x, _From.y + (_Direction > 0 ? 1 : -1)));
+        }
+
+        private static void AddGoalBiasedDiagonalStepCandidates(List<Vector2Int> _Candidates, Vector2Int _From, Vector2Int _Delta)
+        {
+            int horizontalDirection = GetStepSign(_Delta.x);
+            int verticalDirection = GetStepSign(_Delta.y);
+            AddDiagonalCandidate(_Candidates, _From, horizontalDirection, verticalDirection);
+            AddDiagonalCandidate(_Candidates, _From, horizontalDirection, 1);
+            AddDiagonalCandidate(_Candidates, _From, horizontalDirection, -1);
+            AddDiagonalCandidate(_Candidates, _From, 1, verticalDirection);
+            AddDiagonalCandidate(_Candidates, _From, -1, verticalDirection);
+            AddDiagonalCandidate(_Candidates, _From, 1, 1);
+            AddDiagonalCandidate(_Candidates, _From, 1, -1);
+            AddDiagonalCandidate(_Candidates, _From, -1, 1);
+            AddDiagonalCandidate(_Candidates, _From, -1, -1);
+        }
+
+        private static void AddDiagonalCandidate(
+            List<Vector2Int> _Candidates,
+            Vector2Int _From,
+            int _HorizontalDirection,
+            int _VerticalDirection)
+        {
+            if (_HorizontalDirection == 0 || _VerticalDirection == 0)
+                return;
+
+            AddUniqueCandidate(_Candidates, new Vector2Int(_From.x + _HorizontalDirection, _From.y + _VerticalDirection));
+        }
+
+        private static int GetStepSign(int _Value)
+        {
+            if (_Value == 0)
+                return 0;
+
+            return _Value > 0 ? 1 : -1;
         }
 
         private static void AddUniqueCandidate(List<Vector2Int> _Candidates, Vector2Int _Cell)

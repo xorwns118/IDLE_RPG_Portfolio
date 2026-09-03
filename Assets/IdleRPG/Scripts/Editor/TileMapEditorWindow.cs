@@ -15,12 +15,20 @@ namespace IdleRPG.Editor
     {
         private const float CellButtonWidth = 34f;
         private const float CellButtonHeight = 24f;
+        private static readonly string[] TabLabels = { "Tile Map", "Tile Navigation" };
 
         [SerializeField] private MvpSceneController Controller;
         [SerializeField] private Vector2Int SelectedCell;
         [SerializeField] private TileVisualKind SelectedVisualKind = TileVisualKind.Ground;
         [SerializeField] private bool PaintVisualOnClick;
+        [SerializeField] private TileMapEditorTab ActiveTab;
         private Vector2 ScrollPosition;
+
+        private enum TileMapEditorTab
+        {
+            TileMap,
+            TileNavigation
+        }
 
         [MenuItem("Idle RPG/Maps/Tile Map Editor", priority = 230)]
         public static void Open()
@@ -65,6 +73,15 @@ namespace IdleRPG.Editor
             MvpTileMapSettings tileMapSettings = designerSettings.World.TileMap;
             SelectedCell = tileMapSettings.ClampCell(SelectedCell);
 
+            DrawEditorTabs();
+            if (ActiveTab == TileMapEditorTab.TileNavigation)
+            {
+                DrawNavigationSettings(designerSettings.TileNavigation);
+                DrawSceneActions();
+                EditorGUILayout.EndScrollView();
+                return;
+            }
+
             DrawShapeSettings(tileMapSettings);
             DrawSpritePalette(tileMapSettings);
             DrawCellGrid(tileMapSettings);
@@ -87,6 +104,12 @@ namespace IdleRPG.Editor
                 FindActiveController();
 
             EditorGUILayout.EndHorizontal();
+            EditorGUILayout.Space(8f);
+        }
+
+        private void DrawEditorTabs()
+        {
+            ActiveTab = (TileMapEditorTab)GUILayout.Toolbar((int)ActiveTab, TabLabels);
             EditorGUILayout.Space(8f);
         }
 
@@ -138,6 +161,44 @@ namespace IdleRPG.Editor
                 });
             }
 
+            EditorGUILayout.Space(10f);
+        }
+
+        private void DrawNavigationSettings(MvpTileNavigationSettings _Settings)
+        {
+            if (_Settings == null)
+                return;
+
+            EditorGUILayout.LabelField("Tile Navigation", EditorStyles.boldLabel);
+
+            bool useTileMovement = _Settings.UseTileMovement;
+            bool useWaypointCompression = _Settings.UseWaypointCompression;
+            bool allowDiagonalMovement = _Settings.AllowDiagonalMovement;
+
+            EditorGUI.BeginChangeCheck();
+            useTileMovement = EditorGUILayout.Toggle("Use Tile Movement", useTileMovement);
+            using (new EditorGUI.DisabledScope(!useTileMovement))
+            {
+                useWaypointCompression = EditorGUILayout.Toggle("Use Waypoint Compression", useWaypointCompression);
+                using (new EditorGUI.DisabledScope(!useWaypointCompression))
+                {
+                    allowDiagonalMovement = EditorGUILayout.Toggle("Allow Diagonal Movement", allowDiagonalMovement);
+                }
+            }
+
+            if (EditorGUI.EndChangeCheck())
+            {
+                ApplyNavigationChange("Edit Tile Navigation", _NavigationSettings =>
+                {
+                    _NavigationSettings.UseTileMovement = useTileMovement;
+                    _NavigationSettings.UseWaypointCompression = useWaypointCompression;
+                    _NavigationSettings.AllowDiagonalMovement = allowDiagonalMovement;
+                });
+            }
+
+            EditorGUILayout.HelpBox(
+                "A* builds a walkable tile path. Compression and diagonal movement control the smoothed realtime waypoint.",
+                MessageType.Info);
             EditorGUILayout.Space(10f);
         }
 
@@ -464,6 +525,19 @@ namespace IdleRPG.Editor
             _Edit(settings);
             settings.EnsureDefaults();
             SelectedCell = settings.ClampCell(SelectedCell);
+            RebuildScene();
+        }
+
+        private void ApplyNavigationChange(string _UndoName, Action<MvpTileNavigationSettings> _Edit)
+        {
+            if (Controller == null || _Edit == null)
+                return;
+
+            Undo.RecordObject(Controller, _UndoName);
+            MvpSceneDesignerSettings designerSettings = Controller.DesignerEditableSettings;
+            designerSettings.EnsureDefaults();
+            _Edit(designerSettings.TileNavigation);
+            designerSettings.TileNavigation.EnsureDefaults();
             RebuildScene();
         }
 

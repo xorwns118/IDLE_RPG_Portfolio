@@ -53,7 +53,11 @@ namespace IdleRPG.Runtime.Bootstrap
             Transform monsterSpawnPoint = CreateSpawnPoint(tileMap, designerSettings.World);
 
             BattleContext context = gameObject.AddComponent<BattleContext>();
-            ActorFactory actorFactory = new ActorFactory(unitSprite, designerSettings.Actors, designerSettings.CombatLoop.Mode);
+            ActorFactory actorFactory = new ActorFactory(
+                unitSprite,
+                designerSettings.Actors,
+                designerSettings.TileNavigation,
+                designerSettings.CombatLoop.Mode);
 
             StageController stageController = gameObject.AddComponent<StageController>();
             stageController.Initialize(new StageController.RuntimeSetup

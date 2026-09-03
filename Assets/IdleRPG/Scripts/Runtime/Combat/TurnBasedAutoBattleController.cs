@@ -14,6 +14,7 @@ namespace IdleRPG.Runtime.Combat
     public sealed class TurnBasedAutoBattleController : MonoBehaviour, ICombatLoop
     {
         [SerializeField] private MvpTurnCombatSettings Settings = new MvpTurnCombatSettings();
+        [SerializeField] private MvpTileNavigationSettings NavigationSettings = new MvpTileNavigationSettings();
 
         private BattleContext Context;
         private float TurnTimer;
@@ -31,14 +32,33 @@ namespace IdleRPG.Runtime.Combat
 
         public void Initialize(BattleContext _Context, MvpTurnCombatSettings _Settings)
         {
-            Initialize(_Context, _Settings, true);
+            Initialize(_Context, _Settings, new MvpTileNavigationSettings(), true);
+        }
+
+        public void Initialize(
+            BattleContext _Context,
+            MvpTurnCombatSettings _Settings,
+            MvpTileNavigationSettings _NavigationSettings)
+        {
+            Initialize(_Context, _Settings, _NavigationSettings, true);
         }
 
         public void Initialize(BattleContext _Context, MvpTurnCombatSettings _Settings, bool _RuntimeActive)
         {
+            Initialize(_Context, _Settings, new MvpTileNavigationSettings(), _RuntimeActive);
+        }
+
+        public void Initialize(
+            BattleContext _Context,
+            MvpTurnCombatSettings _Settings,
+            MvpTileNavigationSettings _NavigationSettings,
+            bool _RuntimeActive)
+        {
             Context = _Context;
             Settings = _Settings ?? new MvpTurnCombatSettings();
+            NavigationSettings = _NavigationSettings ?? new MvpTileNavigationSettings();
             Settings.EnsureDefaults();
+            NavigationSettings.EnsureDefaults();
             TurnTimer = Settings.TurnDelaySeconds;
             TurnCursor = Settings.PlayerActsFirst ? -1 : 0;
             ExecutedTurnCount = 0;
@@ -192,12 +212,12 @@ namespace IdleRPG.Runtime.Combat
         private bool IsInsideAttackRange(CombatActor _Actor, CombatActor _Target)
         {
             TileMapLayout tileMap = Context.TileMap;
-            if (tileMap != null && tileMap.IsEnabled && Settings.UseTileMovement)
+            if (tileMap != null && tileMap.IsEnabled && NavigationSettings.UseTileMovement)
             {
                 Vector2Int actorCell = tileMap.WorldToCell(_Actor.transform.position);
                 Vector2Int targetCell = tileMap.WorldToCell(_Target.transform.position);
                 int attackRange = tileMap.GetAttackRangeInCells(_Actor.Model.Stats.AttackRange, Context.Targeting.AttackRangePadding);
-                return tileMap.GetCellDistance(actorCell, targetCell) <= attackRange;
+                return tileMap.GetNavigationDistance(actorCell, targetCell, NavigationSettings) <= attackRange;
             }
 
             return CombatRangePolicy.IsInsideAttackRange(_Actor, _Target, Context.Targeting.AttackRangePadding);
@@ -206,7 +226,7 @@ namespace IdleRPG.Runtime.Combat
         private bool TryMoveTowardTarget(CombatActor _Actor, CombatActor _Target)
         {
             TileMapLayout tileMap = Context.TileMap;
-            if (tileMap != null && tileMap.IsEnabled && Settings.UseTileMovement)
+            if (tileMap != null && tileMap.IsEnabled && NavigationSettings.UseTileMovement)
                 return TryMoveByTile(_Actor, _Target, tileMap);
 
             return TryMoveByWorld(_Actor, _Target);
@@ -217,7 +237,7 @@ namespace IdleRPG.Runtime.Combat
             Vector2Int actorCell = _TileMap.WorldToCell(_Actor.transform.position);
             Vector2Int targetCell = _TileMap.WorldToCell(_Target.transform.position);
             int attackRange = _TileMap.GetAttackRangeInCells(_Actor.Model.Stats.AttackRange, Context.Targeting.AttackRangePadding);
-            Vector2Int nextCell = _TileMap.GetNextCellToward(actorCell, targetCell, attackRange);
+            Vector2Int nextCell = _TileMap.GetNextCellToward(actorCell, targetCell, attackRange, NavigationSettings);
             if (nextCell == actorCell)
             {
                 _Actor.Model.SetState(ActorState.Search);

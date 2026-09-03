@@ -15541,7 +15541,7 @@ MonoBehaviour:
       DisplayName: Link
       Stats:
         MaxHp: 140
-        AttackPower: 1
+        AttackPower: 15
         Defense: 100
         AttackRange: 1.05
         AttackInterval: 0.7
@@ -16045,6 +16045,10 @@ MonoBehaviour:
       GroundSortingOrder: 1
       PlayerStartPosition: {x: -3.2, y: 0, z: 0}
       MonsterSpawnPosition: {x: 3.3, y: 0, z: 0}
+    TileNavigation:
+      UseTileMovement: 1
+      UseWaypointCompression: 1
+      AllowDiagonalMovement: 1
     Actors:
       PlayerScale: {x: 0.85, y: 1.25, z: 1}
       MonsterScale: {x: 0.8, y: 1, z: 1}
@@ -16055,8 +16059,8 @@ MonoBehaviour:
       NameLabelOffset: {x: 0, y: 1.35, z: 0}
       NameLabelCharacterSize: 0.18
       NameLabelFontSize: 20
-      PlayerSortingOrder: 10
-      MonsterSortingOrder: 9
+      PlayerSortingOrder: 9
+      MonsterSortingOrder: 10
       LabelSortingOrderOffset: 20
       AnimatorController: {fileID: 22100000, guid: bf12d2ce7ac89c74da29e2e496f38d3b, type: 2}
       Animation:
@@ -16077,7 +16081,6 @@ MonoBehaviour:
         Enabled: 1
         InitialAttackDelayMin: 0
         InitialAttackDelayMax: 0.15
-        UseTileMovement: 1
         SkillUseDelaySeconds: 1
         SkillReadyDelaySeconds: 1
         TileArrivalThreshold: 0.03
@@ -16110,7 +16113,6 @@ MonoBehaviour:
     TurnCombat:
       TurnDelaySeconds: 0.45
       PlayerActsFirst: 1
-      UseTileMovement: 1
       SkillUseDelaySeconds: 1
       SkillReadyDelaySeconds: 1
       WorldMoveSecondsPerTurn: 0.45
