@@ -14,6 +14,9 @@ namespace IdleRPG.Runtime.Configuration
         [Header("World Layout")]
         public MvpWorldLayoutSettings World = new MvpWorldLayoutSettings();
 
+        [Header("Tile Navigation")]
+        public MvpTileNavigationSettings TileNavigation = new MvpTileNavigationSettings();
+
         [Header("Actor View")]
         public MvpActorViewSettings Actors = new MvpActorViewSettings();
 
@@ -54,6 +57,9 @@ namespace IdleRPG.Runtime.Configuration
             if (World == null)
                 World = new MvpWorldLayoutSettings();
 
+            if (TileNavigation == null)
+                TileNavigation = new MvpTileNavigationSettings();
+
             if (Actors == null)
                 Actors = new MvpActorViewSettings();
 
@@ -83,6 +89,7 @@ namespace IdleRPG.Runtime.Configuration
 
             Camera.EnsureDefaults();
             World.EnsureDefaults();
+            TileNavigation.EnsureDefaults();
             Actors.EnsureDefaults();
             CombatLoop.EnsureDefaults();
             Spawn.EnsureDefaults();
@@ -946,6 +953,23 @@ namespace IdleRPG.Runtime.Configuration
     }
 
     [Serializable]
+    public sealed class MvpTileNavigationSettings
+    {
+        [Tooltip("When a Tile Map Layout exists, actors use tile navigation so blocked cells are avoided.")]
+        public bool UseTileMovement = true;
+
+        [Tooltip("Compress the A* tile path into farther waypoints for more natural realtime movement.")]
+        public bool UseWaypointCompression = true;
+
+        [Tooltip("Allow compressed realtime waypoints to move across X and Y at the same time.")]
+        public bool AllowDiagonalMovement = true;
+
+        public void EnsureDefaults()
+        {
+        }
+    }
+
+    [Serializable]
     public sealed class MvpAutoCombatSettings
     {
         [Tooltip("Enable real-time per-actor auto combat updates.")]
@@ -953,8 +977,6 @@ namespace IdleRPG.Runtime.Configuration
 
         [Min(0f)] public float InitialAttackDelayMin = 0f;
         [Min(0f)] public float InitialAttackDelayMax = 0.15f;
-        [Tooltip("When a Tile Map Layout exists, actors use tile path steps so blocked cells are avoided.")]
-        public bool UseTileMovement = true;
         [Tooltip("Shared delay after any skill succeeds. Prevents several ready skills from firing in the same moment.")]
         [Min(0f)] public float SkillUseDelaySeconds = 1f;
         [Tooltip("Delay after a skill becomes ready before auto combat may cast it. Keeps Ready visible before the skill fires.")]
@@ -1029,8 +1051,6 @@ namespace IdleRPG.Runtime.Configuration
     {
         [Min(0.01f)] public float TurnDelaySeconds = 0.45f;
         public bool PlayerActsFirst = true;
-        [Tooltip("Use tile cells for turn movement and attack range when a Tile Map Layout exists.")]
-        public bool UseTileMovement = true;
         [Tooltip("Shared delay after any skill succeeds. Turn-based mode checks this before selecting another skill for the same actor.")]
         [Min(0f)] public float SkillUseDelaySeconds = 1f;
         [Tooltip("Delay after a skill becomes ready before turn-based auto combat may cast it.")]

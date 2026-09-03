@@ -11,6 +11,7 @@ namespace IdleRPG.Runtime.Actors
     {
         private readonly Sprite UnitSprite;
         private readonly MvpActorViewSettings VisualSettings;
+        private readonly MvpTileNavigationSettings NavigationSettings;
         private readonly CombatLoopMode LoopMode;
 
         public ActorFactory(Sprite _UnitSprite)
@@ -24,11 +25,22 @@ namespace IdleRPG.Runtime.Actors
         }
 
         public ActorFactory(Sprite _UnitSprite, MvpActorViewSettings _VisualSettings, CombatLoopMode _CombatLoopMode)
+            : this(_UnitSprite, _VisualSettings, new MvpTileNavigationSettings(), _CombatLoopMode)
+        {
+        }
+
+        public ActorFactory(
+            Sprite _UnitSprite,
+            MvpActorViewSettings _VisualSettings,
+            MvpTileNavigationSettings _NavigationSettings,
+            CombatLoopMode _CombatLoopMode)
         {
             UnitSprite = _UnitSprite;
             VisualSettings = _VisualSettings ?? MvpActorViewSettings.CreateDefault();
+            NavigationSettings = _NavigationSettings ?? new MvpTileNavigationSettings();
             LoopMode = _CombatLoopMode;
             VisualSettings.EnsureDefaults();
+            NavigationSettings.EnsureDefaults();
         }
 
         public CombatActor CreateActor(ActorModel _Model, Vector3 _Position, Color _Color, BattleContext _Context)
@@ -62,7 +74,7 @@ namespace IdleRPG.Runtime.Actors
             EnsureNameLabel(_ActorObject.transform, _Model.DisplayName, sortingOrder + VisualSettings.LabelSortingOrderOffset);
 
             AutoCombatController controller = GetOrAdd<AutoCombatController>(_ActorObject);
-            controller.Initialize(_Context, VisualSettings.AutoCombat);
+            controller.Initialize(_Context, VisualSettings.AutoCombat, NavigationSettings);
             controller.SetRuntimeActive(LoopMode == CombatLoopMode.Realtime);
 
             _Context.Register(actor);

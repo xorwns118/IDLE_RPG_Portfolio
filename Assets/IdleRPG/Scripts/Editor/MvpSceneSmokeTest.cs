@@ -1,5 +1,6 @@
 #if UNITY_EDITOR
 using System;
+using System.Collections.Generic;
 using IdleRPG.Domain;
 using IdleRPG.Domain.Actors;
 using IdleRPG.Domain.Combat;
@@ -147,6 +148,11 @@ namespace IdleRPG.Editor
             Require(tileMapSettings.FindPropertyRelative("DefaultVisualKind") != null, "Tile Map settings need Default Visual Kind.");
             Require(tileMapSettings.FindPropertyRelative("SpritePalette") != null, "Tile Map settings need Sprite Palette.");
             Require(tileMapSettings.FindPropertyRelative("CellOverrides") != null, "Tile Map settings need Cell Overrides.");
+            SerializedProperty tileNavigationSettings = designerSettings.FindPropertyRelative("TileNavigation");
+            Require(tileNavigationSettings != null, "DesignerSettings needs Tile Navigation settings.");
+            Require(tileNavigationSettings.FindPropertyRelative("UseTileMovement") != null, "Tile Navigation settings need Use Tile Movement.");
+            Require(tileNavigationSettings.FindPropertyRelative("UseWaypointCompression") != null, "Tile Navigation settings need Use Waypoint Compression.");
+            Require(tileNavigationSettings.FindPropertyRelative("AllowDiagonalMovement") != null, "Tile Navigation settings need Allow Diagonal Movement.");
             SerializedProperty actorSettings = designerSettings.FindPropertyRelative("Actors");
             Require(actorSettings != null, "DesignerSettings needs Actor View settings.");
             SerializedProperty animationSettings = actorSettings.FindPropertyRelative("Animation");
@@ -171,7 +177,6 @@ namespace IdleRPG.Editor
             Require(designerSettings.FindPropertyRelative("FieldEncounter") != null, "DesignerSettings needs Field Encounter settings.");
             SerializedProperty turnCombatSettings = designerSettings.FindPropertyRelative("TurnCombat");
             Require(turnCombatSettings != null, "DesignerSettings needs Turn Combat settings.");
-            Require(turnCombatSettings.FindPropertyRelative("UseTileMovement") != null, "Turn Combat settings need Use Tile Movement.");
             Require(turnCombatSettings.FindPropertyRelative("SkillUseDelaySeconds") != null, "Turn Combat settings need Skill Use Delay Seconds.");
             Require(turnCombatSettings.FindPropertyRelative("SkillReadyDelaySeconds") != null, "Turn Combat settings need Skill Ready Delay Seconds.");
             Require(turnCombatSettings.FindPropertyRelative("WorldMoveSecondsPerTurn") != null, "Turn Combat settings need World Move Seconds Per Turn.");
@@ -330,7 +335,7 @@ namespace IdleRPG.Editor
                 TileMapLayout tileMap = CreateSmokeChild(runtimeRoot.transform, "Smoke Tile Map").AddComponent<TileMapLayout>();
                 tileMap.Configure(designerSettings.World.TileMap);
 
-                System.Collections.Generic.List<Vector2Int> straightPath = new System.Collections.Generic.List<Vector2Int>();
+                List<Vector2Int> straightPath = new List<Vector2Int>();
                 Require(
                     tileMap.TryGetPathToward(new Vector2Int(1, 2), new Vector2Int(5, 2), 1, straightPath)
                     && straightPath.Count == 3
@@ -338,6 +343,61 @@ namespace IdleRPG.Editor
                     && straightPath[1] == new Vector2Int(3, 2)
                     && straightPath[2] == new Vector2Int(4, 2),
                     "A* tile movement should keep a straight path when no obstacle is blocking it.");
+
+                List<Vector2Int> smoothedStraightPath = new List<Vector2Int>();
+                Require(
+                    tileMap.TryGetSmoothedPathToward(new Vector2Int(1, 2), new Vector2Int(5, 2), 1, smoothedStraightPath)
+                    && smoothedStraightPath.Count == 1
+                    && smoothedStraightPath[0] == new Vector2Int(4, 2),
+                    "Smoothed A* tile movement should compress a straight path into one waypoint.");
+
+                List<Vector2Int> diagonalPath = new List<Vector2Int>();
+                Require(
+                    tileMap.TryGetSmoothedPathToward(
+                        new Vector2Int(1, 1),
+                        new Vector2Int(5, 3),
+                        1,
+                        designerSettings.TileNavigation,
+                        diagonalPath)
+                    && diagonalPath.Count > 0
+                    && diagonalPath[0].x != 1
+                    && diagonalPath[0].y != 1,
+                    "Tile Navigation should allow diagonal smoothed waypoints by default.");
+
+                Vector2Int diagonalNextCell = tileMap.GetNextCellToward(
+                    new Vector2Int(1, 1),
+                    new Vector2Int(5, 3),
+                    1,
+                    designerSettings.TileNavigation);
+                Require(
+                    diagonalNextCell.x != 1
+                    && diagonalNextCell.y != 1,
+                    "Tile Navigation should allow diagonal A* path steps by default.");
+
+                MvpTileNavigationSettings noDiagonalNavigation = new MvpTileNavigationSettings
+                {
+                    AllowDiagonalMovement = false
+                };
+                Vector2Int noDiagonalNextCell = tileMap.GetNextCellToward(
+                    new Vector2Int(1, 1),
+                    new Vector2Int(5, 3),
+                    1,
+                    noDiagonalNavigation);
+                Require(
+                    noDiagonalNextCell.x == 1 || noDiagonalNextCell.y == 1,
+                    "Tile Navigation should keep A* path steps cardinal when diagonal movement is disabled.");
+
+                List<Vector2Int> noDiagonalPath = new List<Vector2Int>();
+                Require(
+                    tileMap.TryGetSmoothedPathToward(
+                        new Vector2Int(1, 1),
+                        new Vector2Int(5, 3),
+                        1,
+                        noDiagonalNavigation,
+                        noDiagonalPath)
+                    && noDiagonalPath.Count > 0
+                    && (noDiagonalPath[0].x == 1 || noDiagonalPath[0].y == 1),
+                    "Tile Navigation should keep the next waypoint cardinal when diagonal movement is disabled.");
 
                 designerSettings.World.TileMap.SetCell(new Vector2Int(2, 2), TileKind.Blocked, TileVisualKind.Wall);
                 designerSettings.World.TileMap.AddMonsterSpawnCell(new Vector2Int(6, 3));
@@ -350,10 +410,21 @@ namespace IdleRPG.Editor
                 Require(tileMap.Settings.GetTileVisualKind(blockedCell) == TileVisualKind.Wall, "Blocked Tile Cell should keep its painted visual kind.");
                 Require(nextCell != blockedCell, "Tile movement should avoid blocked cells.");
                 Require(tileMap.IsWalkable(nextCell), "Tile movement should choose a walkable next cell.");
+
+                List<Vector2Int> smoothedBlockedPath = new List<Vector2Int>();
+                Require(
+                    tileMap.TryGetSmoothedPathToward(new Vector2Int(1, 2), new Vector2Int(3, 2), 1, smoothedBlockedPath)
+                    && smoothedBlockedPath.Count > 0
+                    && smoothedBlockedPath[0] != blockedCell
+                    && tileMap.IsWalkable(smoothedBlockedPath[0]),
+                    "Smoothed A* tile movement should not cut through blocked cells.");
+
                 Require(tileMap.Settings.HasMultipleMonsterSpawnCells, "Tile Map should support multiple Monster Spawn Cells.");
                 Require(tileMap.Settings.IsMonsterSpawnCell(new Vector2Int(6, 3)), "Tile Map did not keep the added Monster Spawn Cell.");
                 Require(!tileMap.Settings.IsMonsterSpawnCell(blockedCell), "Blocked Tile Cell should not become a Monster Spawn Cell.");
-                Require(designerSettings.Actors.AutoCombat.UseTileMovement, "Auto combat should use tile movement by default.");
+                Require(designerSettings.TileNavigation.UseTileMovement, "Tile Navigation should use tile movement by default.");
+                Require(designerSettings.TileNavigation.UseWaypointCompression, "Tile Navigation should use waypoint compression by default.");
+                Require(designerSettings.TileNavigation.AllowDiagonalMovement, "Tile Navigation should allow diagonal movement by default.");
                 Require(!designerSettings.Actors.Targeting.LimitSearchRange, "Target search range should not stop battle startup by default.");
                 Require(!designerSettings.FieldEncounter.Enabled, "Field encounter should be opt-in for the current battle MVP scene.");
                 Require(designerSettings.CombatLoop.Mode == CombatLoopMode.Realtime, "Realtime combat should be the default MVP combat loop.");
@@ -361,7 +432,11 @@ namespace IdleRPG.Editor
                 RequireAnimationFacingPolicy();
                 RequireSkillSystem();
 
-                ActorFactory factory = new ActorFactory(GeneratedSpriteFactory.CreateUnitSprite(), designerSettings.Actors, designerSettings.CombatLoop.Mode);
+                ActorFactory factory = new ActorFactory(
+                    GeneratedSpriteFactory.CreateUnitSprite(),
+                    designerSettings.Actors,
+                    designerSettings.TileNavigation,
+                    designerSettings.CombatLoop.Mode);
                 stage.Initialize(new StageController.RuntimeSetup
                 {
                     Database = DemoContentFactory.CreateWeek1Database(),
@@ -417,12 +492,12 @@ namespace IdleRPG.Editor
         private static void RequirePrefabProfiles()
         {
             RequirePrefabProfile(
-                "Assets/IdleRPG/Prefabs/Actors/Hero_Base.prefab",
+                "Assets/IdleRPG/Prefabs/Actors/Link_Test.prefab",
                 ActorTeam.Player,
                 "player.hero",
-                "Training Hero",
+                "Link",
                 140f,
-                16f,
+                30f,
                 0,
                 0);
 
@@ -698,6 +773,7 @@ namespace IdleRPG.Editor
                 ActorFactory turnFactory = new ActorFactory(
                     GeneratedSpriteFactory.CreateUnitSprite(),
                     designerSettings.Actors,
+                    designerSettings.TileNavigation,
                     CombatLoopMode.TurnBased);
 
                 CombatActor player = turnFactory.CreateActor(
@@ -715,7 +791,7 @@ namespace IdleRPG.Editor
                 Require(!monster.GetComponent<AutoCombatController>().IsRuntimeActive, "Realtime monster loop should be inactive in TurnBased mode.");
 
                 TurnBasedAutoBattleController turnLoop = loopRoot.AddComponent<TurnBasedAutoBattleController>();
-                turnLoop.Initialize(turnContext, designerSettings.TurnCombat, true);
+                turnLoop.Initialize(turnContext, designerSettings.TurnCombat, designerSettings.TileNavigation, true);
                 Require(turnLoop.IsRuntimeActive, "Turn-based loop should be active when TurnBased mode is selected.");
                 float monsterHpBefore = monster.Model.CurrentHp;
                 Require(turnLoop.TryExecuteTurn(1f), "Turn-based loop did not execute when selected.");
@@ -797,7 +873,11 @@ namespace IdleRPG.Editor
             BattleContext boundaryContext = fieldRoot.AddComponent<BattleContext>();
             StageController stage = fieldRoot.AddComponent<StageController>();
             MvpSceneDesignerSettings designerSettings = MvpSceneDesignerSettings.CreateDefault();
-            ActorFactory factory = new ActorFactory(GeneratedSpriteFactory.CreateUnitSprite(), designerSettings.Actors, CombatLoopMode.Realtime);
+            ActorFactory factory = new ActorFactory(
+                GeneratedSpriteFactory.CreateUnitSprite(),
+                designerSettings.Actors,
+                designerSettings.TileNavigation,
+                CombatLoopMode.Realtime);
             Transform spawnPoint = CreateSmokeChild(fieldRoot.transform, "Boundary Spawn Point").transform;
             stage.Initialize(new StageController.RuntimeSetup
             {
@@ -812,7 +892,7 @@ namespace IdleRPG.Editor
             Require(stage.HasActiveStage, "Boundary smoke stage did not create a battle stage.");
 
             TurnBasedAutoBattleController turnLoop = fieldRoot.AddComponent<TurnBasedAutoBattleController>();
-            turnLoop.Initialize(boundaryContext, designerSettings.TurnCombat, true);
+            turnLoop.Initialize(boundaryContext, designerSettings.TurnCombat, designerSettings.TileNavigation, true);
             Require(turnLoop.IsRuntimeActive, "Boundary turn loop did not start for battle mode.");
             stage.SetRealtimeCombatActive(false);
             turnLoop.SetRuntimeActive(false);

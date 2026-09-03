@@ -4477,6 +4477,10 @@ MonoBehaviour:
       GroundSortingOrder: 1
       PlayerStartPosition: {x: -3.2, y: 0, z: 0}
       MonsterSpawnPosition: {x: 3.3, y: 0, z: 0}
+    TileNavigation:
+      UseTileMovement: 1
+      UseWaypointCompression: 1
+      AllowDiagonalMovement: 1
     Actors:
       PlayerScale: {x: 0.85, y: 1.25, z: 1}
       MonsterScale: {x: 0.8, y: 1, z: 1}
@@ -4509,7 +4513,6 @@ MonoBehaviour:
         Enabled: 1
         InitialAttackDelayMin: 0
         InitialAttackDelayMax: 0.15
-        UseTileMovement: 1
         SkillUseDelaySeconds: 1
         SkillReadyDelaySeconds: 1
         TileArrivalThreshold: 0.03
@@ -4542,7 +4545,6 @@ MonoBehaviour:
     TurnCombat:
       TurnDelaySeconds: 0.45
       PlayerActsFirst: 1
-      UseTileMovement: 1
       SkillUseDelaySeconds: 1
       SkillReadyDelaySeconds: 1
       WorldMoveSecondsPerTurn: 0.45

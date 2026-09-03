@@ -133,7 +133,11 @@ namespace IdleRPG.Runtime.Bootstrap
 
         private void InitializeBattleRuntime(int _StartStageNumberOverride)
         {
-            ActorFactory factory = new ActorFactory(EnsureSprite(), DesignerSettings.Actors, DesignerSettings.CombatLoop.Mode);
+            ActorFactory factory = new ActorFactory(
+                EnsureSprite(),
+                DesignerSettings.Actors,
+                DesignerSettings.TileNavigation,
+                DesignerSettings.CombatLoop.Mode);
             RuntimeStageController.Initialize(new StageController.RuntimeSetup
             {
                 Database = GameContent.CreateDatabase(),
@@ -166,6 +170,7 @@ namespace IdleRPG.Runtime.Bootstrap
             RuntimeTurnBattleController.Initialize(
                 RuntimeBattleContext,
                 DesignerSettings.TurnCombat,
+                DesignerSettings.TileNavigation,
                 turnBasedActive);
         }
 

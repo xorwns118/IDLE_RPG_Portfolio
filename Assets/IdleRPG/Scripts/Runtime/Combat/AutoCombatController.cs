@@ -15,6 +15,7 @@ namespace IdleRPG.Runtime.Combat
         private CombatActor Actor;
         private BattleContext Context;
         private MvpAutoCombatSettings Settings = new MvpAutoCombatSettings();
+        private MvpTileNavigationSettings NavigationSettings = new MvpTileNavigationSettings();
         private HealthBarView HealthBar;
         private MeshRenderer NameLabelRenderer;
         private readonly SkillExecutor Skills = new SkillExecutor();
@@ -36,9 +37,19 @@ namespace IdleRPG.Runtime.Combat
 
         public void Initialize(BattleContext _Context, MvpAutoCombatSettings _Settings)
         {
+            Initialize(_Context, _Settings, new MvpTileNavigationSettings());
+        }
+
+        public void Initialize(
+            BattleContext _Context,
+            MvpAutoCombatSettings _Settings,
+            MvpTileNavigationSettings _NavigationSettings)
+        {
             Context = _Context;
             Settings = _Settings ?? new MvpAutoCombatSettings();
+            NavigationSettings = _NavigationSettings ?? new MvpTileNavigationSettings();
             Settings.EnsureDefaults();
+            NavigationSettings.EnsureDefaults();
             Actor = GetComponent<CombatActor>();
             HealthBar = GetComponent<HealthBarView>();
             NameLabelRenderer = ResolveNameLabelRenderer();
@@ -89,7 +100,7 @@ namespace IdleRPG.Runtime.Combat
             if (TryUseSkill(target))
                 return;
 
-            if (tileMap != null && tileMap.IsEnabled && Settings.UseTileMovement)
+            if (tileMap != null && tileMap.IsEnabled && NavigationSettings.UseTileMovement)
             {
                 UpdateTileCombat(target, tileMap);
                 return;
@@ -112,6 +123,25 @@ namespace IdleRPG.Runtime.Combat
 
         private void UpdateTileCombat(CombatActor _Target, TileMapLayout _TileMap)
         {
+            Vector2Int actorCell = _TileMap.WorldToCell(transform.position);
+            Vector2Int targetCell = _TileMap.WorldToCell(_Target.transform.position);
+            int attackRange = _TileMap.GetAttackRangeInCells(Actor.Model.Stats.AttackRange, Context.Targeting.AttackRangePadding);
+            int distance = _TileMap.GetNavigationDistance(actorCell, targetCell, NavigationSettings);
+
+            if (HasTileMoveTarget
+                && !NavigationSettings.UseWaypointCompression
+                && _TileMap.GetNavigationDistance(actorCell, TileMoveTargetCell, NavigationSettings) > 1)
+            {
+                ClearTileMoveTarget();
+            }
+
+            if (distance <= attackRange)
+            {
+                ClearTileMoveTarget();
+                Attack(_Target);
+                return;
+            }
+
             if (HasTileMoveTarget)
             {
                 if (!_TileMap.IsWalkable(TileMoveTargetCell))
@@ -128,32 +158,22 @@ namespace IdleRPG.Runtime.Combat
                 }
             }
 
-            Vector2Int actorCell = _TileMap.WorldToCell(transform.position);
-            Vector2Int targetCell = _TileMap.WorldToCell(_Target.transform.position);
-            int attackRange = _TileMap.GetAttackRangeInCells(Actor.Model.Stats.AttackRange, Context.Targeting.AttackRangePadding);
-            int distance = _TileMap.GetCellDistance(actorCell, targetCell);
-
-            if (distance > attackRange)
+            Vector2Int nextCell = NavigationSettings.UseWaypointCompression
+                ? _TileMap.GetNextWaypointToward(actorCell, targetCell, attackRange, NavigationSettings)
+                : _TileMap.GetNextCellToward(actorCell, targetCell, attackRange, NavigationSettings);
+            if (nextCell == actorCell)
             {
-                Vector2Int nextCell = _TileMap.GetNextCellToward(actorCell, targetCell, attackRange);
-                if (nextCell == actorCell)
-                {
-                    Actor.Model.SetState(ActorState.Search);
-                    Actor.PlayIdleAnimation();
-                    return;
-                }
-
-                TileMoveTargetCell = nextCell;
-                HasTileMoveTarget = true;
-                if (MoveToward(_TileMap.CellToActorWorld(TileMoveTargetCell), _Target.transform.position))
-                    ClearTileMoveTarget();
-
-                ApplyTileSorting(_TileMap);
+                Actor.Model.SetState(ActorState.Search);
+                Actor.PlayIdleAnimation();
                 return;
             }
 
-            ClearTileMoveTarget();
-            Attack(_Target);
+            TileMoveTargetCell = nextCell;
+            HasTileMoveTarget = true;
+            if (MoveToward(_TileMap.CellToActorWorld(TileMoveTargetCell), _Target.transform.position))
+                ClearTileMoveTarget();
+
+            ApplyTileSorting(_TileMap);
         }
 
         private bool TryUseSkill(CombatActor _Target)
